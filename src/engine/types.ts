@@ -88,6 +88,7 @@ export interface SanitizationResult {
   processingTimeMs: number;
 }
 
+/** Builds the canonical span-exclusion key (`start:end:type`) used for whitelisting. */
 export function makeSpanKey(
   entity: Pick<DetectedEntity, 'start' | 'end' | 'type'>
 ): string {

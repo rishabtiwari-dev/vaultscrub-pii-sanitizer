@@ -18,6 +18,26 @@ function productionCspPlugin(): Plugin {
 
 export default defineConfig({
   plugins: [react(), tailwindcss(), productionCspPlugin()],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          const normalized = id.replace(/\\/g, '/');
+          if (
+            normalized.includes('/node_modules/react/') ||
+            normalized.includes('/node_modules/react-dom/') ||
+            normalized.includes('/node_modules/scheduler/')
+          ) {
+            return 'vendor-react';
+          }
+          if (normalized.includes('/node_modules/lucide-react/')) {
+            return 'vendor-icons';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
   test: {
     environment: 'node',
   },

@@ -1,4 +1,14 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MutableRefObject,
+  type ReactNode,
+  type RefObject,
+} from 'react';
 import {
   Check,
   ClipboardPaste,
@@ -101,7 +111,62 @@ interface SourceProps {
   onScroll: () => void;
 }
 
-export function SourcePane(p: SourceProps) {
+const MIN_EDITOR_HEIGHT_PX = 260;
+const HINT_DURATION_MS = 3500;
+
+/**
+ * Synchronizes vertical scroll proportionally between two diff panes using
+ * `requestAnimationFrame` throttling and cleans up pending frames on unmount.
+ */
+export function useSyncedScroll(
+  leftRef: RefObject<HTMLDivElement | null>,
+  rightRef: RefObject<HTMLDivElement | null>,
+  suppressUntilRef: MutableRefObject<number>
+): { onScrollLeft: () => void; onScrollRight: () => void } {
+  const syncing = useRef(false);
+  const rafId = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current !== null) {
+        window.cancelAnimationFrame(rafId.current);
+      }
+    };
+  }, []);
+
+  const scheduleSync = useCallback(
+    (from: 'left' | 'right') => {
+      if (performance.now() < suppressUntilRef.current) return;
+      if (syncing.current) {
+        syncing.current = false;
+        return;
+      }
+      if (rafId.current !== null) return;
+
+      rafId.current = window.requestAnimationFrame(() => {
+        rafId.current = null;
+        const a = from === 'left' ? leftRef.current : rightRef.current;
+        const b = from === 'left' ? rightRef.current : leftRef.current;
+        if (!a || !b) return;
+        const range = a.scrollHeight - a.clientHeight;
+        const ratio = range > 0 ? a.scrollTop / range : 0;
+        const target = ratio * (b.scrollHeight - b.clientHeight);
+        if (Math.abs(b.scrollTop - target) > 1) {
+          syncing.current = true;
+          b.scrollTop = target;
+        }
+      });
+    },
+    [leftRef, rightRef, suppressUntilRef]
+  );
+
+  const onScrollLeft = useCallback(() => scheduleSync('left'), [scheduleSync]);
+  const onScrollRight = useCallback(() => scheduleSync('right'), [scheduleSync]);
+
+  return { onScrollLeft, onScrollRight };
+}
+
+export const SourcePane = memo(function SourcePane(p: SourceProps) {
   const taRef = useRef<HTMLTextAreaElement>(null);
   const pendingFocus = useRef(false);
   const [hint, setHint] = useState<string | null>(null);
@@ -110,7 +175,7 @@ export function SourcePane(p: SourceProps) {
     const ta = taRef.current;
     if (ta && p.view === 'edit') {
       ta.style.height = 'auto';
-      ta.style.height = `${Math.max(ta.scrollHeight, 260)}px`;
+      ta.style.height = `${Math.max(ta.scrollHeight, MIN_EDITOR_HEIGHT_PX)}px`;
       if (pendingFocus.current) {
         pendingFocus.current = false;
         ta.focus();
@@ -120,7 +185,7 @@ export function SourcePane(p: SourceProps) {
 
   useEffect(() => {
     if (!hint) return;
-    const id = window.setTimeout(() => setHint(null), 3500);
+    const id = window.setTimeout(() => setHint(null), HINT_DURATION_MS);
     return () => window.clearTimeout(id);
   }, [hint]);
 
@@ -314,7 +379,7 @@ export function SourcePane(p: SourceProps) {
       </div>
     </section>
   );
-}
+});
 
 interface OutputProps {
   segments: OutputSegment[];
@@ -330,7 +395,7 @@ interface OutputProps {
   onScroll: () => void;
 }
 
-export function OutputPane(p: OutputProps) {
+export const OutputPane = memo(function OutputPane(p: OutputProps) {
   const lines = useMemo(() => splitSegmentsIntoLines(p.segments), [p.segments]);
   const focusAnchor = p.focus?.anchor;
   const skipped = p.rejectedCount + p.whitelistedCount;
@@ -420,4 +485,4 @@ export function OutputPane(p: OutputProps) {
       </div>
     </section>
   );
-}
+});

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeCheck, Crosshair, Download, EyeOff, Info, RotateCcw, Undo2 } from 'lucide-react';
 import {
   type DetectedEntity,
@@ -22,6 +22,7 @@ interface Props {
   onJump: (span: { start: number; end: number }) => void;
 }
 
+const PAGE_SIZE = 100;
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 const ROW =
   'group cursor-pointer border-t border-slate-900 outline-none transition-colors hover:bg-slate-900/70 focus-visible:bg-slate-900/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400';
@@ -55,7 +56,7 @@ function auditReportFileName(sourceFileName: string | null): string {
   return `${base}_audit_report.json`;
 }
 
-export function AuditPanel({
+export const AuditPanel = memo(function AuditPanel({
   result,
   mode,
   strictVerhoeff,
@@ -70,11 +71,16 @@ export function AuditPanel({
 }: Props) {
   const [tab, setTab] = useState<Tab>('entities');
   const [includePseudonymMap, setIncludePseudonymMap] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const tabRefs = useRef<Record<Tab, HTMLButtonElement | null>>({
     entities: null,
     rejected: null,
     pseudonyms: null,
   });
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [tab, result]);
   const redacted = result.entities.filter((e) => !e.whitelisted).length;
   const exposurePct =
     result.entities.length === 0
@@ -254,7 +260,7 @@ export function AuditPanel({
                 </tr>
               </thead>
               <tbody className="font-mono">
-                {result.entities.map((e) => (
+                {result.entities.slice(0, visibleCount).map((e) => (
                   <tr
                     key={`${e.start}:${e.end}:${e.type}`}
                     role="button"
@@ -298,6 +304,13 @@ export function AuditPanel({
               </tbody>
             </table>
           ))}
+        {tab === 'entities' && result.entities.length > visibleCount && (
+          <PaginationButton
+            total={result.entities.length}
+            visible={visibleCount}
+            onMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+          />
+        )}
 
         {tab === 'rejected' &&
           (result.rejectedCandidates.length === 0 ? (
@@ -330,7 +343,7 @@ export function AuditPanel({
                   </tr>
                 </thead>
                 <tbody className="font-mono">
-                  {result.rejectedCandidates.map((r) => (
+                  {result.rejectedCandidates.slice(0, visibleCount).map((r) => (
                     <tr
                       key={`${r.start}:${r.end}:${r.suspectedType}`}
                       role="button"
@@ -356,6 +369,13 @@ export function AuditPanel({
                   ))}
                 </tbody>
               </table>
+              {result.rejectedCandidates.length > visibleCount && (
+                <PaginationButton
+                  total={result.rejectedCandidates.length}
+                  visible={visibleCount}
+                  onMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                />
+              )}
             </div>
           ))}
 
@@ -404,7 +424,7 @@ export function AuditPanel({
                     </tr>
                   </thead>
                   <tbody className="font-mono">
-                    {pseudoRows.map((r) => (
+                    {pseudoRows.slice(0, visibleCount).map((r) => (
                       <tr key={r.token} className="border-t border-slate-900">
                         <td className="py-1.5 pr-3 text-emerald-300">{r.token}</td>
                         <td className="pr-3 text-slate-300">{previewMasked(r.sample)}</td>
@@ -414,10 +434,39 @@ export function AuditPanel({
                   </tbody>
                 </table>
               )}
+              {pseudoRows.length > visibleCount && (
+                <PaginationButton
+                  total={pseudoRows.length}
+                  visible={visibleCount}
+                  onMore={() => setVisibleCount((c) => c + PAGE_SIZE)}
+                />
+              )}
             </div>
           ))}
       </div>
     </section>
+  );
+});
+
+function PaginationButton({
+  total,
+  visible,
+  onMore,
+}: {
+  total: number;
+  visible: number;
+  onMore: () => void;
+}) {
+  return (
+    <div className="flex justify-center pt-2">
+      <button
+        type="button"
+        onClick={onMore}
+        className={`rounded border border-slate-700 bg-zinc-900 px-3 py-1 text-[11px] font-medium text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 ${FOCUS_RING}`}
+      >
+        Show {Math.min(PAGE_SIZE, total - visible)} more (showing {visible} of {total})
+      </button>
+    </div>
   );
 }
 

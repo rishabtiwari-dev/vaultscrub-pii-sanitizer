@@ -21,6 +21,27 @@ const PAN_HOLDER_TYPES: Record<string, string> = {
 
 const PAN_REGEX = /^[A-Z]{3}[ABCFGHJLPT][A-Z][0-9]{4}[A-Z]$/;
 const PAN_STANDARD_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]$/;
+const SEPARATORS_REGEX = /[\s-]/g;
+const DIGITS_ONLY_REGEX = /^\d+$/;
+const LUHN_INPUT_REGEX = /^\d{2,}$/;
+const VERHOEFF_11_REGEX = /^\d{11}$/;
+const AMEX_PREFIX_REGEX = /^3[47]/;
+const VISA_PREFIX_REGEX = /^4/;
+const MASTERCARD_PREFIX_REGEX = /^(?:5[1-5]|2(?:22[1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720))/;
+const RUPAY_PREFIX_REGEX = /^(?:60(?!11)|652[12]|81|82|508[5-9]|353|356)/;
+const DISCOVER_PREFIX_REGEX =
+  /^(?:6011|64[4-9]|65(?!2[12])|622(?:12[6-9]|1[3-9]\d|[2-8]\d\d|9[01]\d|92[0-5]))/;
+const IPV4_OCTET_REGEX = /^(?:0|[1-9]\d{0,2})$/;
+const IPV6_GROUP_REGEX = /^[0-9a-fA-F]{1,4}$/;
+const WHITESPACE_REGEX = /\s/;
+
+const ASCII_ZERO = 48;
+const IPV4_OCTET_COUNT = 4;
+const IPV4_OCTET_MAX = 255;
+const IPV6_GROUP_COUNT = 8;
+const VERHOEFF_PERM_MOD = 8;
+const LUHN_FILL_STEP = 3;
+const LUHN_FILL_OFFSET = 7;
 
 // Full dihedral D5 multiplication table
 const VERHOEFF_D: readonly (readonly number[])[] = [
@@ -52,7 +73,7 @@ const VERHOEFF_P: readonly (readonly number[])[] = [
 const VERHOEFF_INV: readonly number[] = [0, 4, 3, 2, 1, 5, 6, 7, 8, 9];
 
 function stripSeparators(value: string): string {
-  return value.replace(/[\s-]/g, '');
+  return value.replace(SEPARATORS_REGEX, '');
 }
 
 /**
@@ -60,7 +81,7 @@ function stripSeparators(value: string): string {
  */
 export function isValidLuhn(digits: string): boolean {
   const clean = stripSeparators(digits);
-  if (!/^\d{2,}$/.test(clean)) {
+  if (!LUHN_INPUT_REGEX.test(clean)) {
     return false;
   }
 
@@ -68,7 +89,7 @@ export function isValidLuhn(digits: string): boolean {
   let shouldDouble = false;
 
   for (let i = clean.length - 1; i >= 0; i--) {
-    let digit = clean.charCodeAt(i) - 48;
+    let digit = clean.charCodeAt(i) - ASCII_ZERO;
     if (shouldDouble) {
       digit *= 2;
       if (digit > 9) {
@@ -87,27 +108,23 @@ export function isValidLuhn(digits: string): boolean {
  */
 export function detectCardNetwork(digits: string): CardNetwork {
   const clean = stripSeparators(digits);
-  if (!/^\d+$/.test(clean)) {
+  if (!DIGITS_ONLY_REGEX.test(clean)) {
     return 'Unknown';
   }
 
-  if (/^3[47]/.test(clean)) {
+  if (AMEX_PREFIX_REGEX.test(clean)) {
     return 'Amex';
   }
-  if (/^4/.test(clean)) {
+  if (VISA_PREFIX_REGEX.test(clean)) {
     return 'Visa';
   }
-  if (/^(?:5[1-5]|2(?:22[1-9]|2[3-9]\d|[3-6]\d\d|7[01]\d|720))/.test(clean)) {
+  if (MASTERCARD_PREFIX_REGEX.test(clean)) {
     return 'Mastercard';
   }
-  if (/^(?:60(?!11)|652[12]|81|82|508[5-9]|353|356)/.test(clean)) {
+  if (RUPAY_PREFIX_REGEX.test(clean)) {
     return 'RuPay';
   }
-  if (
-    /^(?:6011|64[4-9]|65(?!2[12])|622(?:12[6-9]|1[3-9]\d|[2-8]\d\d|9[01]\d|92[0-5]))/.test(
-      clean
-    )
-  ) {
+  if (DISCOVER_PREFIX_REGEX.test(clean)) {
     return 'Discover';
   }
 
@@ -119,14 +136,14 @@ export function detectCardNetwork(digits: string): CardNetwork {
  */
 export function isValidVerhoeff(digits: string): boolean {
   const clean = stripSeparators(digits);
-  if (!/^\d+$/.test(clean)) {
+  if (!DIGITS_ONLY_REGEX.test(clean)) {
     return false;
   }
 
   let checksum = 0;
   for (let i = 0; i < clean.length; i++) {
-    const digit = clean.charCodeAt(clean.length - 1 - i) - 48;
-    checksum = VERHOEFF_D[checksum][VERHOEFF_P[i % 8][digit]];
+    const digit = clean.charCodeAt(clean.length - 1 - i) - ASCII_ZERO;
+    checksum = VERHOEFF_D[checksum][VERHOEFF_P[i % VERHOEFF_PERM_MOD][digit]];
   }
 
   return checksum === 0;
@@ -157,16 +174,16 @@ export function decodePanHolderType(pan: string): string {
  */
 export function isValidIPv4(ip: string): boolean {
   const parts = ip.split('.');
-  if (parts.length !== 4) {
+  if (parts.length !== IPV4_OCTET_COUNT) {
     return false;
   }
 
   for (const part of parts) {
-    if (!/^(?:0|[1-9]\d{0,2})$/.test(part)) {
+    if (!IPV4_OCTET_REGEX.test(part)) {
       return false;
     }
     const num = Number(part);
-    if (num < 0 || num > 255) {
+    if (num < 0 || num > IPV4_OCTET_MAX) {
       return false;
     }
   }
@@ -178,7 +195,7 @@ export function isValidIPv4(ip: string): boolean {
  * Validates standard, compressed (::), and IPv4-mapped IPv6 addresses.
  */
 export function isValidIPv6(ip: string): boolean {
-  if (!ip || /\s/.test(ip) || !ip.includes(':')) {
+  if (!ip || WHITESPACE_REGEX.test(ip) || !ip.includes(':')) {
     return false;
   }
   if (ip.includes(':::')) {
@@ -212,7 +229,7 @@ export function isValidIPv6(ip: string): boolean {
           return { count: 0, valid: false };
         }
         count += 2;
-      } else if (/^[0-9a-fA-F]{1,4}$/.test(part)) {
+      } else if (IPV6_GROUP_REGEX.test(part)) {
         count += 1;
       } else {
         return { count: 0, valid: false };
@@ -229,11 +246,11 @@ export function isValidIPv6(ip: string): boolean {
       return false;
     }
     const totalGroups = left.count + right.count;
-    return totalGroups < 8;
+    return totalGroups < IPV6_GROUP_COUNT;
   }
 
   const full = parseSegment(ip, true);
-  return full.valid && full.count === 8;
+  return full.valid && full.count === IPV6_GROUP_COUNT;
 }
 
 /**
@@ -242,7 +259,7 @@ export function isValidIPv6(ip: string): boolean {
  */
 export function generateValidLuhn(prefix: string, length: number): string {
   const cleanPrefix = stripSeparators(prefix);
-  if (!/^\d+$/.test(cleanPrefix)) {
+  if (!DIGITS_ONLY_REGEX.test(cleanPrefix)) {
     throw new Error('Prefix must contain only digits.');
   }
   if (length < cleanPrefix.length + 1) {
@@ -252,17 +269,20 @@ export function generateValidLuhn(prefix: string, length: number): string {
   }
 
   const payloadLength = length - 1;
-  let payload = cleanPrefix;
+  const payloadChars: string[] = [cleanPrefix];
+  let currentLength = cleanPrefix.length;
   let fillIndex = 0;
-  while (payload.length < payloadLength) {
-    payload += String((fillIndex * 3 + 7) % 10);
-    fillIndex++;
+  while (currentLength < payloadLength) {
+    payloadChars.push(String((fillIndex * LUHN_FILL_STEP + LUHN_FILL_OFFSET) % 10));
+    currentLength += 1;
+    fillIndex += 1;
   }
+  const payload = payloadChars.join('');
 
   let sum = 0;
   let shouldDouble = true;
   for (let i = payload.length - 1; i >= 0; i--) {
-    let digit = payload.charCodeAt(i) - 48;
+    let digit = payload.charCodeAt(i) - ASCII_ZERO;
     if (shouldDouble) {
       digit *= 2;
       if (digit > 9) {
@@ -282,14 +302,14 @@ export function generateValidLuhn(prefix: string, length: number): string {
  */
 export function generateValidVerhoeff12(first11Digits: string): string {
   const clean = stripSeparators(first11Digits);
-  if (!/^\d{11}$/.test(clean)) {
+  if (!VERHOEFF_11_REGEX.test(clean)) {
     throw new Error('first11Digits must contain exactly 11 digits.');
   }
 
   let checksum = 0;
   for (let i = 0; i < clean.length; i++) {
-    const digit = clean.charCodeAt(clean.length - 1 - i) - 48;
-    checksum = VERHOEFF_D[checksum][VERHOEFF_P[(i + 1) % 8][digit]];
+    const digit = clean.charCodeAt(clean.length - 1 - i) - ASCII_ZERO;
+    checksum = VERHOEFF_D[checksum][VERHOEFF_P[(i + 1) % VERHOEFF_PERM_MOD][digit]];
   }
 
   const checkDigit = VERHOEFF_INV[checksum];

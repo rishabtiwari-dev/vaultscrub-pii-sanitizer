@@ -57,14 +57,14 @@ function parseCsvWithCells(input: string): RawCsvCell[][] {
       // Quoted field
       const rawStart = i;
       i += 1; // skip opening quote
-      let value = '';
+      const valueChunks: string[] = [];
       const rawIndices: number[] = [];
 
       while (i < len) {
         const ch = input[i];
         if (ch === '"') {
           if (i + 1 < len && input[i + 1] === '"') {
-            value += '"';
+            valueChunks.push('"');
             rawIndices.push(i);
             i += 2;
           } else {
@@ -72,16 +72,16 @@ function parseCsvWithCells(input: string): RawCsvCell[][] {
             break;
           }
         } else {
-          value += ch;
+          valueChunks.push(ch);
           rawIndices.push(i);
           i += 1;
         }
       }
 
       const rawEnd = i;
-      currentRow.push({ value, rawStart, rawEnd, rawIndices });
+      currentRow.push({ value: valueChunks.join(''), rawStart, rawEnd, rawIndices });
 
-      // Skip optional spaces before delimiter? RFC-4180 expects immediate delimiter or EOL.
+      // RFC-4180 expects immediate delimiter or EOL after closing quote.
       if (i < len && input[i] === ',') {
         i += 1;
         if (i === len) {
@@ -102,17 +102,15 @@ function parseCsvWithCells(input: string): RawCsvCell[][] {
     } else {
       // Unquoted field
       const rawStart = i;
-      let value = '';
       const rawIndices: number[] = [];
 
       while (i < len && input[i] !== ',' && input[i] !== '\r' && input[i] !== '\n') {
-        value += input[i];
         rawIndices.push(i);
         i += 1;
       }
 
       const rawEnd = i;
-      currentRow.push({ value, rawStart, rawEnd, rawIndices });
+      currentRow.push({ value: input.slice(rawStart, rawEnd), rawStart, rawEnd, rawIndices });
 
       if (i < len && input[i] === ',') {
         i += 1;
@@ -274,15 +272,18 @@ export function buildCsvTableData(
   }
 
   const columnCount = rawRows.reduce((max, row) => Math.max(max, row.length), 0);
+  // Single monotonic sweep over sorted entities across cells: O(cells + entities).
+  let entityIdx = 0;
   const tableRows: CsvTableCell[][] = rawRows.map((row) =>
     row.map((cell) => {
+      while (entityIdx < entities.length && entities[entityIdx].end <= cell.rawStart) {
+        entityIdx += 1;
+      }
       const matched: { start: number; end: number; entity: DetectedEntity }[] = [];
-      for (const entity of entities) {
-        if (entity.end <= cell.rawStart) continue;
-        if (entity.start >= cell.rawEnd) break;
-        const mapped = mapEntityToCellOffsets(cell, entity);
+      for (let k = entityIdx; k < entities.length && entities[k].start < cell.rawEnd; k += 1) {
+        const mapped = mapEntityToCellOffsets(cell, entities[k]);
         if (mapped) {
-          matched.push({ ...mapped, entity });
+          matched.push({ ...mapped, entity: entities[k] });
         }
       }
       return buildCellData(cell, matched);

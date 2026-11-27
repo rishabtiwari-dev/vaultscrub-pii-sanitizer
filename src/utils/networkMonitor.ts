@@ -19,6 +19,10 @@ let installed = false;
 
 const DEV_PATH_PREFIXES = ['/@vite', '/@react-refresh', '/@id', '/@fs', '/src/', '/node_modules/', '/__vite'];
 
+/**
+ * Returns true if the URL is a local dev-server asset or non-network scheme
+ * (data:, blob:, about:) that should not be counted as an outbound request.
+ */
 export function isIgnoredRequestUrl(
   rawUrl: string,
   baseHref: string = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
@@ -49,6 +53,7 @@ function record(method: string, rawUrl: string): void {
   listeners.forEach((l) => l());
 }
 
+/** Installs runtime fetch and XMLHttpRequest observers to verify zero outbound traffic. */
 export function installNetworkMonitor(): void {
   if (installed || typeof window === 'undefined') return;
   installed = true;
@@ -81,14 +86,17 @@ function subscribe(listener: () => void): () => void {
   return () => listeners.delete(listener);
 }
 
+/** Returns the number of detected outbound network requests in the current session. */
 export function getExternalRequestCount(): number {
   return externalCount;
 }
 
+/** Returns an immutable snapshot of detected outbound network request metadata. */
 export function getRequestRecords(): readonly NetworkRequestRecord[] {
   return records;
 }
 
+/** React hook subscribing to the live count of detected outbound network requests. */
 export function useExternalRequestCount(): number {
   return useSyncExternalStore(subscribe, getExternalRequestCount, () => 0);
 }

@@ -641,4 +641,77 @@ describe('performance', () => {
     expect(result.rejectedCandidates.length).toBeGreaterThanOrEqual(400);
     expectOffsetIntegrity(doc, result.entities);
   });
+
+  it('resolves 3,000 overlapping multi-priority spans in O(N log N) with strict non-overlap', () => {
+    const candidates: DetectedEntity[] = [];
+    const totalClusters = 500;
+
+    // Build clusters in reverse order to stress worst-case sorting and interval insertion.
+    for (let i = totalClusters - 1; i >= 0; i--) {
+      const base = i * 30;
+      const makeCandidate = (
+        start: number,
+        end: number,
+        type: DetectedEntity['type']
+      ): DetectedEntity => ({
+        start,
+        end,
+        value: 'x'.repeat(end - start),
+        normalizedValue: 'x',
+        type,
+        metadata: {},
+        validationBadge: type,
+      });
+
+      // Lower-priority wider/nested spans plus same-priority shorter/longer ties.
+      candidates.push(makeCandidate(base, base + 22, 'CUSTOM'));
+      candidates.push(makeCandidate(base + 1, base + 15, 'PHONE'));
+      candidates.push(makeCandidate(base + 2, base + 18, 'PAN'));
+      candidates.push(makeCandidate(base + 4, base + 12, 'EMAIL'));
+      candidates.push(makeCandidate(base + 4, base + 16, 'EMAIL')); // longer EMAIL wins over shorter
+      candidates.push(makeCandidate(base + 17, base + 25, 'PHONE')); // non-overlapping trailing PHONE
+    }
+
+    const t0 = performance.now();
+    const resolved = resolveSpans(candidates);
+    const elapsed = performance.now() - t0;
+
+    expect(elapsed).toBeLessThan(100);
+    expect(resolved).toHaveLength(totalClusters * 2);
+
+    for (let i = 0; i < totalClusters; i++) {
+      const base = i * 30;
+      const email = resolved[i * 2];
+      const trailingPhone = resolved[i * 2 + 1];
+      expect(email).toMatchObject({ start: base + 4, end: base + 16, type: 'EMAIL' });
+      expect(trailingPhone).toMatchObject({ start: base + 17, end: base + 25, type: 'PHONE' });
+      expect(email.end).toBeLessThanOrEqual(trailingPhone.start);
+      if (i > 0) {
+        expect(resolved[i * 2 - 1].end).toBeLessThanOrEqual(email.start);
+      }
+    }
+  });
+
+  it('blocks phone substring leaks across hundreds of interleaved reserved card and Aadhaar spans', () => {
+    const card = generateValidLuhn('453201', 16);
+    const decoyCard = `${card.slice(0, 15)}${(Number(card[15]) + 1) % 10}`;
+    const aadhaar = generateValidVerhoeff12('98765432101');
+    const decoyAadhaar = `${aadhaar.slice(0, 11)}${(Number(aadhaar[11]) + 1) % 10}`;
+
+    const lines: string[] = [];
+    for (let i = 0; i < 200; i++) {
+      lines.push(
+        `Card ${card} Order ${decoyCard} Aadhaar ${aadhaar} Track ${decoyAadhaar} Call +91-9876543210`
+      );
+    }
+    const text = lines.join('\n');
+    const output = detectEntities(text, { strictVerhoeff: true });
+    const resolved = resolveSpans(output.candidates);
+
+    expect(resolved.filter((e) => e.type === 'CREDIT_CARD')).toHaveLength(200);
+    expect(resolved.filter((e) => e.type === 'AADHAAR')).toHaveLength(200);
+    expect(resolved.filter((e) => e.type === 'PHONE')).toHaveLength(200);
+    expect(output.rejectedCandidates).toHaveLength(400);
+    expectOffsetIntegrity(text, resolved);
+  });
 });

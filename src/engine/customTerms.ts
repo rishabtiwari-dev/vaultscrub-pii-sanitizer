@@ -3,9 +3,15 @@ import type { DetectedEntity } from './types';
 export const MIN_CUSTOM_TERM_LENGTH = 2;
 export const MAX_CUSTOM_TERMS = 50;
 
+const WHITESPACE_RUN_REGEX = /\s+/g;
+const TERM_SPLIT_REGEX = /[,\n]/;
+const REGEX_META_CHARS = /[.*+?^${}()|[\]\\]/g;
+const LEADING_ALNUM_REGEX = /^[A-Za-z0-9]/;
+const TRAILING_ALNUM_REGEX = /[A-Za-z0-9]$/;
+
 /** Canonical form for custom terms: trimmed, whitespace-collapsed, lower-case. */
 export function normalizeCustomTerm(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+  return value.trim().replace(WHITESPACE_RUN_REGEX, ' ').toLowerCase();
 }
 
 /**
@@ -18,11 +24,11 @@ export function parseCustomTerms(
   if (!input) {
     return [];
   }
-  const raw = typeof input === 'string' ? input.split(/[,\n]/) : input;
+  const raw = typeof input === 'string' ? input.split(TERM_SPLIT_REGEX) : input;
   const seen = new Set<string>();
   const terms: string[] = [];
   for (const item of raw) {
-    const term = item.trim().replace(/\s+/g, ' ');
+    const term = item.trim().replace(WHITESPACE_RUN_REGEX, ' ');
     if (term.length < MIN_CUSTOM_TERM_LENGTH) {
       continue;
     }
@@ -40,14 +46,14 @@ export function parseCustomTerms(
 }
 
 function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(REGEX_META_CHARS, '\\$&');
 }
 
 function termPattern(term: string): string {
   // Internal whitespace matches any run of spaces/tabs/NBSP (never newlines).
   const body = term.split(' ').map(escapeRegExp).join('[ \\t\\u00A0]+');
-  const lead = /^[A-Za-z0-9]/.test(term) ? '(?<![A-Za-z0-9])' : '';
-  const trail = /[A-Za-z0-9]$/.test(term) ? '(?![A-Za-z0-9])' : '';
+  const lead = LEADING_ALNUM_REGEX.test(term) ? '(?<![A-Za-z0-9])' : '';
+  const trail = TRAILING_ALNUM_REGEX.test(term) ? '(?![A-Za-z0-9])' : '';
   return `${lead}${body}${trail}`;
 }
 

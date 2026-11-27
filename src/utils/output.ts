@@ -5,6 +5,10 @@ import {
   type RejectedCandidate,
 } from '../engine';
 
+const BYTES_PER_KB = 1024;
+const BYTES_PER_MB = BYTES_PER_KB * BYTES_PER_KB;
+const LINE_SPLIT_REGEX = /\r\n|\r|\n/;
+
 /** Stable anchor id for a span (entities and rejected candidates never overlap). */
 export function spanAnchor(span: { start: number; end: number }): string {
   return `${span.start}:${span.end}`;
@@ -38,6 +42,7 @@ export interface OutputSegment {
   rejected?: RejectedCandidate;
 }
 
+/** Builds ordered diff output segments combining redacted entities, whitelisted spans, and decoys. */
 export function buildOutputSegments(
   text: string,
   entities: DetectedEntity[],
@@ -77,6 +82,7 @@ export interface SourceSegment {
   rejected?: RejectedCandidate;
 }
 
+/** Builds ordered source segments annotating detected entities and rejected decoy spans. */
 export function buildSourceSegments(
   text: string,
   entities: DetectedEntity[],
@@ -112,7 +118,7 @@ export interface LinePiece<T> {
 export function splitSegmentsIntoLines<T extends { text: string }>(segs: T[]): LinePiece<T>[][] {
   const lines: LinePiece<T>[][] = [[]];
   for (const seg of segs) {
-    const parts = seg.text.split(/\r\n|\r|\n/);
+    const parts = seg.text.split(LINE_SPLIT_REGEX);
     parts.forEach((part, i) => {
       if (i > 0) lines.push([]);
       if (part) lines[lines.length - 1].push({ seg, text: part, first: i === 0 });
@@ -121,20 +127,24 @@ export function splitSegmentsIntoLines<T extends { text: string }>(segs: T[]): L
   return lines;
 }
 
+/** Returns a partial-masked preview string for audit tables. */
 export function previewMasked(entity: DetectedEntity): string {
   return maskPartial(entity);
 }
 
+/** Formats a byte count into human-readable B, KB, or MB units. */
 export function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-  return `${(n / 1024 / 1024).toFixed(2)} MB`;
+  if (n < BYTES_PER_KB) return `${n} B`;
+  if (n < BYTES_PER_MB) return `${(n / BYTES_PER_KB).toFixed(1)} KB`;
+  return `${(n / BYTES_PER_MB).toFixed(2)} MB`;
 }
 
+/** Counts display lines in text (an empty string has 0 lines). */
 export function countLines(text: string): number {
-  return text.length === 0 ? 0 : text.split(/\r\n|\r|\n/).length;
+  return text.length === 0 ? 0 : text.split(LINE_SPLIT_REGEX).length;
 }
 
+/** Computes a safe download filename and MIME type for sanitized output. */
 export function sanitizedFileName(
   sourceName: string | null,
   isCsvSample: boolean

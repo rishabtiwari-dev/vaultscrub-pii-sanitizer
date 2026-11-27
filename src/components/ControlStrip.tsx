@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { Lock, Tags, X } from 'lucide-react';
 import type { EntityCounts, EntityType, FullMaskStyle, RedactionMode } from '../engine';
 import { CHIP_ORDER, ENTITY_STYLES } from './entityStyles';
@@ -36,7 +37,7 @@ const CUSTOM_EXAMPLE: Record<RedactionMode, string> = {
   PSEUDONYM: 'CUSTOM_01',
 };
 
-export function ControlStrip(p: Props) {
+export const ControlStrip = memo(function ControlStrip(p: Props) {
   const customHits = p.counts.CUSTOM ?? 0;
   const customSt = ENTITY_STYLES.CUSTOM;
 
@@ -174,4 +175,4 @@ export function ControlStrip(p: Props) {
       </div>
     </section>
   );
-}
+});

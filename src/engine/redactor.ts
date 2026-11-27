@@ -12,6 +12,11 @@ import {
   type SanitizationResult,
 } from './types';
 
+const COUNTRY_CODE_REGEX = /^\+(\d{1,3})/;
+const REGEX_META_CHARS = /[.*+?^${}()|[\]\\]/g;
+const LEADING_WORD_REGEX = /^[A-Za-z0-9_]/;
+const TRAILING_WORD_REGEX = /[A-Za-z0-9_]$/;
+
 const PSEUDONYM_PREFIX: Record<EntityType, string> = {
   EMAIL: 'EMAIL',
   PHONE: 'PHONE',
@@ -124,7 +129,7 @@ export function maskPartial(entity: DetectedEntity): string {
       }
       const trimmed = entity.value.trim();
       if (trimmed.startsWith('+')) {
-        const ccMatch = /^\+(\d{1,3})/.exec(trimmed);
+        const ccMatch = COUNTRY_CODE_REGEX.exec(trimmed);
         if (ccMatch) {
           const cc = ccMatch[1];
           const remainingMasked = Math.max(4, digits.length - cc.length - 4);
@@ -269,7 +274,7 @@ export interface RehydrationResult {
 }
 
 function escapeRegexLiteral(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return value.replace(REGEX_META_CHARS, '\\$&');
 }
 
 /**
@@ -295,8 +300,8 @@ export function rehydrateText(
   const pattern = entries
     .map(([token]) => {
       const escaped = escapeRegexLiteral(token);
-      const prefix = /^[A-Za-z0-9_]/.test(token) ? '(?<![A-Za-z0-9_])' : '';
-      const suffix = /[A-Za-z0-9_]$/.test(token) ? '(?![A-Za-z0-9_])' : '';
+      const prefix = LEADING_WORD_REGEX.test(token) ? '(?<![A-Za-z0-9_])' : '';
+      const suffix = TRAILING_WORD_REGEX.test(token) ? '(?![A-Za-z0-9_])' : '';
       return `${prefix}${escaped}${suffix}`;
     })
     .join('|');

@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Check, Copy, Download, Eye, ShieldCheck, Table2 } from 'lucide-react';
 import { type DetectedEntity } from '../engine';
 import { type CsvTableData } from '../utils/csv';
 import { ENTITY_STYLES } from './entityStyles';
 
 type CellMode = 'sanitized' | 'original';
+const PAGE_SIZE = 100;
 
 interface Props {
   table: CsvTableData;
@@ -16,7 +17,7 @@ interface Props {
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
-export function CsvTableView({
+export const CsvTableView = memo(function CsvTableView({
   table,
   copied,
   onCopy,
@@ -24,6 +25,13 @@ export function CsvTableView({
   onToggleSpan,
 }: Props) {
   const [cellMode, setCellMode] = useState<CellMode>('sanitized');
+  const [visibleRows, setVisibleRows] = useState(PAGE_SIZE);
+
+  useEffect(() => {
+    setVisibleRows(PAGE_SIZE);
+  }, [table.rows]);
+
+  const displayedRows = table.rows.slice(0, visibleRows);
 
   return (
     <section
@@ -122,7 +130,7 @@ export function CsvTableView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-900">
-              {table.rows.map((row, rIdx) => (
+              {displayedRows.map((row, rIdx) => (
                 <tr key={rIdx} className="hover:bg-slate-900/40">
                   <td className="border-r border-slate-900 px-3 py-2 text-right text-slate-600">
                     {rIdx + 1}
@@ -212,8 +220,19 @@ export function CsvTableView({
               ))}
             </tbody>
           </table>
+          {table.rows.length > visibleRows && (
+            <div className="flex items-center justify-center border-t border-slate-800 bg-slate-900/40 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setVisibleRows((prev) => prev + PAGE_SIZE)}
+                className={`rounded border border-slate-700 bg-zinc-900 px-3 py-1 text-xs font-medium text-slate-200 hover:border-emerald-500/50 hover:text-emerald-200 ${FOCUS_RING}`}
+              >
+                Show {Math.min(PAGE_SIZE, table.rows.length - visibleRows)} more (showing {visibleRows} of {table.rows.length})
+              </button>
+            </div>
+          )}
         </div>
       )}
     </section>
   );
-}
+});

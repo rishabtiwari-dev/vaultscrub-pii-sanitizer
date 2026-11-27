@@ -30,8 +30,62 @@ interface SpanRange {
   end: number;
 }
 
-function spansOverlap(a: SpanRange, b: SpanRange): boolean {
-  return a.start < b.end && b.start < a.end;
+const MIN_CARD_DIGITS = 13;
+const MAX_CARD_DIGITS = 19;
+const REJECTED_LUHN_LENGTH = 16;
+const AADHAAR_DIGIT_LENGTH = 12;
+const MIN_PHONE_DIGITS = 10;
+const MAX_PHONE_DIGITS = 15;
+const IN_LOCAL_PHONE_LENGTH = 10;
+const IN_0_PREFIX_PHONE_LENGTH = 11;
+const IN_91_PREFIX_PHONE_LENGTH = 12;
+const IN_0091_PREFIX_PHONE_LENGTH = 14;
+
+const NON_DIGITS_REGEX = /\D/g;
+const ALL_ZEROS_REGEX = /^0+$/;
+const HEX_CHAR_REGEX = /[0-9a-fA-F]/;
+const INDIAN_10_DIGIT_MOBILE_REGEX = /^[6-9]\d{9}$/;
+const INDIAN_START_DIGIT_REGEX = /^[6-9]/;
+const INDIAN_PREFIX_REGEX = /^(?:\+91|0091)/;
+
+/**
+ * Checks whether `span` overlaps any interval in a sorted, non-overlapping
+ * `sortedSpans` list in O(log M) via binary search.
+ */
+function hasOverlappingSpan(sortedSpans: readonly SpanRange[], span: SpanRange): boolean {
+  let lo = 0;
+  let hi = sortedSpans.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (sortedSpans[mid].start < span.end) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo > 0 && sortedSpans[lo - 1].end > span.start;
+}
+
+/**
+ * Merges two sorted, disjoint span lists into one sorted list in O(N + M).
+ */
+function mergeSortedSpans(a: readonly SpanRange[], b: readonly SpanRange[]): SpanRange[] {
+  if (b.length === 0) return [...a];
+  if (a.length === 0) return [...b];
+  const merged = new Array<SpanRange>(a.length + b.length);
+  let i = 0;
+  let j = 0;
+  let k = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i].start <= b[j].start) {
+      merged[k++] = a[i++];
+    } else {
+      merged[k++] = b[j++];
+    }
+  }
+  while (i < a.length) merged[k++] = a[i++];
+  while (j < b.length) merged[k++] = b[j++];
+  return merged;
 }
 
 /**
@@ -47,25 +101,25 @@ export function normalizeEntityValue(type: EntityType, value: string): string {
 
     case 'CREDIT_CARD':
     case 'AADHAAR':
-      return value.replace(/\D/g, '');
+      return value.replace(NON_DIGITS_REGEX, '');
 
     case 'PHONE': {
-      const digits = value.replace(/\D/g, '');
-      if (digits.length === 14 && digits.startsWith('0091')) {
+      const digits = value.replace(NON_DIGITS_REGEX, '');
+      if (digits.length === IN_0091_PREFIX_PHONE_LENGTH && digits.startsWith('0091')) {
         const tail = digits.slice(4);
-        if (/^[6-9]\d{9}$/.test(tail)) {
+        if (INDIAN_10_DIGIT_MOBILE_REGEX.test(tail)) {
           return tail;
         }
       }
-      if (digits.length === 12 && digits.startsWith('91')) {
+      if (digits.length === IN_91_PREFIX_PHONE_LENGTH && digits.startsWith('91')) {
         const tail = digits.slice(2);
-        if (/^[6-9]\d{9}$/.test(tail)) {
+        if (INDIAN_10_DIGIT_MOBILE_REGEX.test(tail)) {
           return tail;
         }
       }
-      if (digits.length === 11 && digits.startsWith('0')) {
+      if (digits.length === IN_0_PREFIX_PHONE_LENGTH && digits.startsWith('0')) {
         const tail = digits.slice(1);
-        if (/^[6-9]\d{9}$/.test(tail)) {
+        if (INDIAN_10_DIGIT_MOBILE_REGEX.test(tail)) {
           return tail;
         }
       }
@@ -112,21 +166,25 @@ export function detectEntities(
 
   const candidates: DetectedEntity[] = [];
   const rejectedCandidates: RejectedCandidate[] = [];
-  const reservedNumericSpans: SpanRange[] = [];
+  const cardReservedSpans: SpanRange[] = [];
 
   // 1. Credit Cards (always scanned to guard against substring false positives on 16-digit IDs)
   for (const match of text.matchAll(CREDIT_CARD_REGEX)) {
     const start = match.index ?? 0;
     const value = match[0];
     const end = start + value.length;
-    const digits = value.replace(/\D/g, '');
+    const digits = value.replace(NON_DIGITS_REGEX, '');
 
-    if (digits.length < 13 || digits.length > 19 || /^0+$/.test(digits)) {
+    if (
+      digits.length < MIN_CARD_DIGITS ||
+      digits.length > MAX_CARD_DIGITS ||
+      ALL_ZEROS_REGEX.test(digits)
+    ) {
       continue;
     }
 
     if (isValidLuhn(digits)) {
-      reservedNumericSpans.push({ start, end });
+      cardReservedSpans.push({ start, end });
       if (isEnabled('CREDIT_CARD')) {
         const cardNetwork = detectCardNetwork(digits);
         candidates.push({
@@ -142,8 +200,8 @@ export function detectEntities(
           validationBadge: `${cardNetwork} · Luhn Valid`,
         });
       }
-    } else if (digits.length === 16) {
-      reservedNumericSpans.push({ start, end });
+    } else if (digits.length === REJECTED_LUHN_LENGTH) {
+      cardReservedSpans.push({ start, end });
       if (isEnabled('CREDIT_CARD')) {
         rejectedCandidates.push({
           start,
@@ -174,23 +232,24 @@ export function detectEntities(
   }
 
   // 3. Aadhaar (12-digit starting 2-9)
+  const aadhaarReservedSpans: SpanRange[] = [];
   for (const match of text.matchAll(AADHAAR_REGEX)) {
     const start = match.index ?? 0;
     const value = match[0];
     const end = start + value.length;
     const span = { start, end };
 
-    if (reservedNumericSpans.some((reserved) => spansOverlap(span, reserved))) {
+    if (hasOverlappingSpan(cardReservedSpans, span)) {
       continue;
     }
 
-    const digits = value.replace(/\D/g, '');
-    if (digits.length !== 12) {
+    const digits = value.replace(NON_DIGITS_REGEX, '');
+    if (digits.length !== AADHAAR_DIGIT_LENGTH) {
       continue;
     }
 
     if (isValidVerhoeff(digits)) {
-      reservedNumericSpans.push(span);
+      aadhaarReservedSpans.push(span);
       if (isEnabled('AADHAAR')) {
         candidates.push({
           start,
@@ -203,7 +262,7 @@ export function detectEntities(
         });
       }
     } else if (strictVerhoeff) {
-      reservedNumericSpans.push(span);
+      aadhaarReservedSpans.push(span);
       if (isEnabled('AADHAAR')) {
         rejectedCandidates.push({
           start,
@@ -214,7 +273,7 @@ export function detectEntities(
         });
       }
     } else if (isEnabled('AADHAAR')) {
-      reservedNumericSpans.push(span);
+      aadhaarReservedSpans.push(span);
       candidates.push({
         start,
         end,
@@ -249,7 +308,7 @@ export function detectEntities(
     for (const match of text.matchAll(IPV6_REGEX)) {
       const start = match.index ?? 0;
       const value = match[0];
-      if (!/[0-9a-fA-F]/.test(value) || !isValidIPv6(value)) {
+      if (!HEX_CHAR_REGEX.test(value) || !isValidIPv6(value)) {
         continue;
       }
       candidates.push({
@@ -291,8 +350,9 @@ export function detectEntities(
     }
   }
 
-  // 6. Phone Numbers
+  // 6. Phone Numbers (checked against merged sorted reserved spans via binary search)
   if (isEnabled('PHONE')) {
+    const reservedNumericSpans = mergeSortedSpans(cardReservedSpans, aadhaarReservedSpans);
     for (const match of text.matchAll(PHONE_REGEX)) {
       const start = match.index ?? 0;
       const value = match[0];
@@ -302,21 +362,27 @@ export function detectEntities(
       if (ISO_DATE_LIKE.test(value) || DMY_DATE_LIKE.test(value)) {
         continue;
       }
-      if (reservedNumericSpans.some((reserved) => spansOverlap(span, reserved))) {
+      if (hasOverlappingSpan(reservedNumericSpans, span)) {
         continue;
       }
 
-      const digits = value.replace(/\D/g, '');
-      if (digits.length < 10 || digits.length > 15) {
+      const digits = value.replace(NON_DIGITS_REGEX, '');
+      if (digits.length < MIN_PHONE_DIGITS || digits.length > MAX_PHONE_DIGITS) {
         continue;
       }
 
       const normalized = normalizeEntityValue('PHONE', value);
       const isIndian =
-        /^(?:\+91|0091)/.test(value) ||
-        (digits.length === 12 && digits.startsWith('91') && /^[6-9]/.test(digits.slice(2))) ||
-        (digits.length === 11 && digits.startsWith('0') && /^[6-9]/.test(digits.slice(1))) ||
-        (digits.length === 10 && /^[6-9]/.test(digits) && !value.trim().startsWith('('));
+        INDIAN_PREFIX_REGEX.test(value) ||
+        (digits.length === IN_91_PREFIX_PHONE_LENGTH &&
+          digits.startsWith('91') &&
+          INDIAN_START_DIGIT_REGEX.test(digits.slice(2))) ||
+        (digits.length === IN_0_PREFIX_PHONE_LENGTH &&
+          digits.startsWith('0') &&
+          INDIAN_START_DIGIT_REGEX.test(digits.slice(1))) ||
+        (digits.length === IN_LOCAL_PHONE_LENGTH &&
+          INDIAN_START_DIGIT_REGEX.test(digits) &&
+          !value.trim().startsWith('('));
 
       candidates.push({
         start,

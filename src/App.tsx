@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, Columns2, Table2, Upload } from 'lucide-react';
 import {
   ALL_ENTITY_TYPES,
@@ -14,17 +14,16 @@ import {
 } from './engine';
 import { AuditPanel } from './components/AuditPanel';
 import { ControlStrip } from './components/ControlStrip';
-import { CsvTableView } from './components/CsvTableView';
 import {
   OutputPane,
   SourcePane,
+  useSyncedScroll,
   type FocusTarget,
   type SourceView,
 } from './components/DiffPanes';
-import { HowItWorksModal } from './components/HowItWorksModal';
-import { PromptLogModal } from './components/PromptLogModal';
-import { RehydrateModal } from './components/RehydrateModal';
 import { TopBar, type LoadedSource } from './components/TopBar';
+import { useDebouncedValue, useImmediateDebouncedValue } from './hooks/useDebouncedValue';
+import { useFileIngestion } from './hooks/useFileIngestion';
 import { buildCsvTableData } from './utils/csv';
 import {
   buildOutputSegments,
@@ -33,9 +32,24 @@ import {
   spanAnchor,
 } from './utils/output';
 
+const CsvTableView = lazy(() =>
+  import('./components/CsvTableView').then((m) => ({ default: m.CsvTableView }))
+);
+const HowItWorksModal = lazy(() =>
+  import('./components/HowItWorksModal').then((m) => ({ default: m.HowItWorksModal }))
+);
+const PromptLogModal = lazy(() =>
+  import('./components/PromptLogModal').then((m) => ({ default: m.PromptLogModal }))
+);
+const RehydrateModal = lazy(() =>
+  import('./components/RehydrateModal').then((m) => ({ default: m.RehydrateModal }))
+);
+
 const DEBOUNCE_MS = 120;
 const FOCUS_PULSE_MS = 1600;
-const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024; // 5 MB client-side memory guard
+const TOAST_DURATION_MS = 2000;
+const COPY_FEEDBACK_MS = 1800;
+const SCROLL_SUPPRESS_MS = 900;
 const INITIAL_SAMPLE: SamplePresetId = 'support_ticket';
 type WorkspaceView = 'diff' | 'csv';
 
@@ -48,15 +62,6 @@ function describeSource(
     size: new TextEncoder().encode(content).length,
     lines: countLines(content),
   };
-}
-
-function useDebouncedValue<T>(value: T, ms: number): T {
-  const [debounced, setDebounced] = useState(value);
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(value), ms);
-    return () => window.clearTimeout(id);
-  }, [value, ms]);
-  return debounced;
 }
 
 /** Centers a `[data-anchor]` element inside its own scroll container. */
@@ -73,7 +78,7 @@ function scrollToAnchor(container: HTMLElement | null, anchor: string): void {
 export default function App() {
   // First impression: boot straight into a live, fully highlighted sample.
   const [text, setText] = useState(() => SAMPLE_PRESETS[INITIAL_SAMPLE].content);
-  const [debounced, setDebounced] = useState(() => SAMPLE_PRESETS[INITIAL_SAMPLE].content);
+  const [debounced, setDebouncedImmediate] = useImmediateDebouncedValue(text, DEBOUNCE_MS);
   const [source, setSource] = useState<LoadedSource | null>(() =>
     describeSource(SAMPLE_PRESETS[INITIAL_SAMPLE].content, { name: null, sampleId: INITIAL_SAMPLE })
   );
@@ -86,8 +91,6 @@ export default function App() {
   const [customTermsInput, setCustomTermsInput] = useState('');
   const [copied, setCopied] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>('diff');
   const [howItWorksOpen, setHowItWorksOpen] = useState(false);
   const [promptLogOpen, setPromptLogOpen] = useState(false);
@@ -95,19 +98,12 @@ export default function App() {
   const [focus, setFocus] = useState<FocusTarget | null>(null);
   const [announcement, setAnnouncement] = useState('');
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dragDepth = useRef(0);
   const leftRef = useRef<HTMLDivElement>(null);
   const rightRef = useRef<HTMLDivElement>(null);
-  const syncing = useRef(false);
   const suppressSyncUntil = useRef(0);
   const focusNonce = useRef(0);
 
-  // Debounce live edits
-  useEffect(() => {
-    const id = window.setTimeout(() => setDebounced(text), DEBOUNCE_MS);
-    return () => window.clearTimeout(id);
-  }, [text]);
+  const { onScrollLeft, onScrollRight } = useSyncedScroll(leftRef, rightRef, suppressSyncUntil);
 
   const debouncedTerms = useDebouncedValue(customTermsInput, DEBOUNCE_MS);
   const customTerms = useMemo(() => parseCustomTerms(debouncedTerms), [debouncedTerms]);
@@ -150,47 +146,60 @@ export default function App() {
     [result.entities.length, whitelistedCount]
   );
 
-  const loadText = useCallback((content: string, src: Omit<LoadedSource, 'size' | 'lines'>) => {
-    setText(content);
-    setDebounced(content); // immediate for loads
-    setExcluded(new Set());
-    setView('inspect');
-    setWorkspaceView('diff');
-    setError(null);
-    setFocus(null);
-    setSource(describeSource(content, src));
-    const label = src.name ?? (src.sampleId ? `${src.sampleId} sample` : 'pasted text');
-    setAnnouncement(`Loaded ${label} (${countLines(content)} lines).`);
-  }, []);
-
-  const loadSample = useCallback(
-    (id: SamplePresetId) => loadText(SAMPLE_PRESETS[id].content, { name: null, sampleId: id }),
-    [loadText]
+  const loadText = useCallback(
+    (content: string, src: Omit<LoadedSource, 'size' | 'lines'>) => {
+      setText(content);
+      setDebouncedImmediate(content);
+      setExcluded(new Set());
+      setView('inspect');
+      setWorkspaceView('diff');
+      setFocus(null);
+      setSource(describeSource(content, src));
+      const label = src.name ?? (src.sampleId ? `${src.sampleId} sample` : 'pasted text');
+      setAnnouncement(`Loaded ${label} (${countLines(content)} lines).`);
+    },
+    [setDebouncedImmediate]
   );
 
-  const handleFile = useCallback(
-    async (file: File) => {
-      if (!/\.(txt|csv)$/i.test(file.name)) {
-        setError('Only .txt and .csv files are supported.');
-        return;
-      }
-      if (file.size > MAX_TEXT_FILE_BYTES) {
-        setError('File exceeds the 5 MB client-side limit. Please split or trim the file.');
-        return;
-      }
-      try {
-        const content = await file.text();
-        loadText(content, { name: file.name, sampleId: null });
-      } catch {
-        setError('Could not read file.');
-      }
+  const onFileTextLoaded = useCallback(
+    (content: string, fileName: string) => {
+      loadText(content, { name: fileName, sampleId: null });
     },
     [loadText]
   );
 
+  const {
+    dragging,
+    error,
+    setError,
+    fileInputRef,
+    handleFile,
+    openFilePicker,
+    onDragEnter,
+    onDragOver,
+    onDragLeave,
+    onDrop,
+  } = useFileIngestion({ onLoadText: onFileTextLoaded });
+
+  const loadSample = useCallback(
+    (id: SamplePresetId) => {
+      setError(null);
+      loadText(SAMPLE_PRESETS[id].content, { name: null, sampleId: id });
+    },
+    [loadText, setError]
+  );
+
+  const handlePasteText = useCallback(
+    (pasted: string) => {
+      setError(null);
+      loadText(pasted, { name: null, sampleId: null });
+    },
+    [loadText, setError]
+  );
+
   const clear = useCallback(() => {
     setText('');
-    setDebounced('');
+    setDebouncedImmediate('');
     setSource(null);
     setExcluded(new Set());
     setView('inspect');
@@ -198,7 +207,7 @@ export default function App() {
     setError(null);
     setFocus(null);
     setAnnouncement('Workspace cleared.');
-  }, []);
+  }, [setDebouncedImmediate, setError]);
 
   const handleEdit = useCallback((t: string) => {
     setText(t);
@@ -241,24 +250,6 @@ export default function App() {
     []
   );
 
-  const syncScroll = (from: 'left' | 'right') => () => {
-    if (performance.now() < suppressSyncUntil.current) return; // jump-to-span in flight
-    if (syncing.current) {
-      syncing.current = false;
-      return;
-    }
-    const a = from === 'left' ? leftRef.current : rightRef.current;
-    const b = from === 'left' ? rightRef.current : leftRef.current;
-    if (!a || !b) return;
-    const range = a.scrollHeight - a.clientHeight;
-    const ratio = range > 0 ? a.scrollTop / range : 0;
-    const target = ratio * (b.scrollHeight - b.clientHeight);
-    if (Math.abs(b.scrollTop - target) > 1) {
-      syncing.current = true;
-      b.scrollTop = target;
-    }
-  };
-
   // Audit row → diff pane jump with a brief focus pulse.
   const jumpTo = useCallback((span: { start: number; end: number }) => {
     setWorkspaceView('diff');
@@ -270,7 +261,7 @@ export default function App() {
   useEffect(() => {
     if (!focus) return;
     const raf = window.requestAnimationFrame(() => {
-      suppressSyncUntil.current = performance.now() + 900;
+      suppressSyncUntil.current = performance.now() + SCROLL_SUPPRESS_MS;
       scrollToAnchor(leftRef.current, focus.anchor);
       scrollToAnchor(rightRef.current, focus.anchor);
     });
@@ -283,7 +274,7 @@ export default function App() {
 
   useEffect(() => {
     if (!toast) return;
-    const id = window.setTimeout(() => setToast(null), 2000);
+    const id = window.setTimeout(() => setToast(null), TOAST_DURATION_MS);
     return () => window.clearTimeout(id);
   }, [toast]);
 
@@ -303,10 +294,14 @@ export default function App() {
       setCopied(true);
       setAnnouncement('Sanitized output copied to clipboard.');
       if (announce) setToast('Sanitized output copied to clipboard');
-      window.setTimeout(() => setCopied(false), 1800);
+      window.setTimeout(() => setCopied(false), COPY_FEEDBACK_MS);
     },
     [exportableText]
   );
+
+  const handleCopy = useCallback(() => {
+    void copy();
+  }, [copy]);
 
   // Keep the global shortcut handler bound once while always calling the latest copy().
   const copyRef = useRef(copy);
@@ -345,37 +340,15 @@ export default function App() {
     setAnnouncement(`Downloaded ${name}.`);
   }, [exportableText, source?.name, source?.sampleId]);
 
-  const isFileDrag = (e: React.DragEvent) =>
-    Array.from(e.dataTransfer?.types ?? []).includes('Files');
+  const openHowItWorks = useCallback(() => setHowItWorksOpen(true), []);
+  const closeHowItWorks = useCallback(() => setHowItWorksOpen(false), []);
+  const openPromptLog = useCallback(() => setPromptLogOpen(true), []);
+  const closePromptLog = useCallback(() => setPromptLogOpen(false), []);
+  const openRehydrate = useCallback(() => setRehydrateOpen(true), []);
+  const closeRehydrate = useCallback(() => setRehydrateOpen(false), []);
+  const switchToPseudonym = useCallback(() => setMode('PSEUDONYM'), []);
 
-  const onDragEnter = (e: React.DragEvent) => {
-    if (!isFileDrag(e)) return;
-    e.preventDefault();
-    dragDepth.current += 1;
-    setDragging(true);
-  };
-
-  const onDragOver = (e: React.DragEvent) => {
-    if (!isFileDrag(e)) return;
-    e.preventDefault();
-  };
-
-  const onDragLeave = (e: React.DragEvent) => {
-    if (!isFileDrag(e)) return;
-    e.preventDefault();
-    dragDepth.current = Math.max(0, dragDepth.current - 1);
-    if (dragDepth.current === 0) {
-      setDragging(false);
-    }
-  };
-
-  const onDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    dragDepth.current = 0;
-    setDragging(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f) void handleFile(f);
-  };
+  const auditFileName = source?.name ?? (source?.sampleId ? `${source.sampleId}.txt` : null);
 
   return (
     <div
@@ -400,8 +373,8 @@ export default function App() {
         onLoadSample={loadSample}
         onFile={handleFile}
         onClear={clear}
-        onOpenHowItWorks={() => setHowItWorksOpen(true)}
-        onOpenPromptLog={() => setPromptLogOpen(true)}
+        onOpenHowItWorks={openHowItWorks}
+        onOpenPromptLog={openPromptLog}
       />
       <ControlStrip
         mode={mode}
@@ -463,13 +436,15 @@ export default function App() {
         className="flex min-h-[324px] flex-1 flex-col gap-3 p-3 outline-none lg:h-[46vh] lg:min-h-[384px] lg:max-h-[644px] lg:flex-row"
       >
         {isCsv && workspaceView === 'csv' && csvTable ? (
-          <CsvTableView
-            table={csvTable}
-            copied={copied}
-            onCopy={() => void copy()}
-            onDownload={download}
-            onToggleSpan={toggleSpan}
-          />
+          <Suspense fallback={null}>
+            <CsvTableView
+              table={csvTable}
+              copied={copied}
+              onCopy={handleCopy}
+              onDownload={download}
+              onToggleSpan={toggleSpan}
+            />
+          </Suspense>
         ) : (
           <>
             <SourcePane
@@ -480,15 +455,15 @@ export default function App() {
               view={view}
               onView={setView}
               onChange={handleEdit}
-              onPasteText={(t) => loadText(t, { name: null, sampleId: null })}
+              onPasteText={handlePasteText}
               onClear={clear}
               onToggleSpan={toggleSpan}
               onResetWhitelist={resetWhitelist}
               onLoadSample={loadSample}
-              onBrowse={() => fileInputRef.current?.click()}
+              onBrowse={openFilePicker}
               focus={focus}
               scrollRef={leftRef}
-              onScroll={syncScroll('left')}
+              onScroll={onScrollLeft}
             />
             <OutputPane
               segments={segments}
@@ -497,11 +472,11 @@ export default function App() {
               redactedCount={redactedCount}
               rejectedCount={result.rejectedCandidates.length}
               whitelistedCount={whitelistedCount}
-              onCopy={() => void copy()}
+              onCopy={handleCopy}
               onDownload={download}
               focus={focus}
               scrollRef={rightRef}
-              onScroll={syncScroll('right')}
+              onScroll={onScrollRight}
             />
           </>
         )}
@@ -511,34 +486,32 @@ export default function App() {
         result={result}
         mode={mode}
         strictVerhoeff={strictVerhoeff}
-        sourceFileName={
-          source?.name ?? (source?.sampleId ? `${source.sampleId}.txt` : null)
-        }
+        sourceFileName={auditFileName}
         whitelistedCount={whitelistedCount}
         customTermCount={customTerms.length}
         onToggleSpan={toggleSpan}
-        onSwitchToPseudonym={() => setMode('PSEUDONYM')}
+        onSwitchToPseudonym={switchToPseudonym}
         onStrictVerhoeff={setStrictVerhoeff}
-        onOpenRehydrate={() => setRehydrateOpen(true)}
+        onOpenRehydrate={openRehydrate}
         onJump={jumpTo}
       />
 
-      <HowItWorksModal
-        open={howItWorksOpen}
-        onClose={() => setHowItWorksOpen(false)}
-      />
-
-      <PromptLogModal
-        open={promptLogOpen}
-        onClose={() => setPromptLogOpen(false)}
-      />
-
-      <RehydrateModal
-        open={rehydrateOpen}
-        onClose={() => setRehydrateOpen(false)}
-        sessionPseudonymMap={result.pseudonymMap}
-        currentSanitizedText={exportableText}
-      />
+      <Suspense fallback={null}>
+        {howItWorksOpen && (
+          <HowItWorksModal open={howItWorksOpen} onClose={closeHowItWorks} />
+        )}
+        {promptLogOpen && (
+          <PromptLogModal open={promptLogOpen} onClose={closePromptLog} />
+        )}
+        {rehydrateOpen && (
+          <RehydrateModal
+            open={rehydrateOpen}
+            onClose={closeRehydrate}
+            sessionPseudonymMap={result.pseudonymMap}
+            currentSanitizedText={exportableText}
+          />
+        )}
+      </Suspense>
 
       <input
         ref={fileInputRef}

@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { memo, useRef } from 'react';
 import { FileText, Info, ScrollText, ShieldCheck, Upload, X } from 'lucide-react';
 import { SAMPLE_PRESET_LIST, type SamplePresetId } from '../engine';
 import { useExternalRequestCount } from '../utils/networkMonitor';
@@ -49,7 +49,7 @@ export function NetworkBadge() {
 
 const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
-export function TopBar({
+export const TopBar = memo(function TopBar({
   source,
   error,
   onLoadSample,
@@ -159,4 +159,4 @@ export function TopBar({
       </div>
     </header>
   );
-}
+});
