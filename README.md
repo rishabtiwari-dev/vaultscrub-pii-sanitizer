@@ -1,5 +1,7 @@
 # VaultScrub
 
+**Live Demo:** https://vaultscrub-pii-sanitizer.vercel.app
+
 **100% Client-Side, Zero-Network PII Detection & Sanitization Workbench**
 
 VaultScrub is an offline-capable, browser-native workbench for detecting, mathematically validating, auditing, and sanitizing Personally Identifiable Information (PII) across unstructured text, logs, clinical notes, resumes, and RFC-4180 CSV files—without a single byte ever leaving the user's device.

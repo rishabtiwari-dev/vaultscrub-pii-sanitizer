@@ -24,8 +24,8 @@ export function CsvTableView({
   const [cellMode, setCellMode] = useState<CellMode>('sanitized');
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
+    <div className="flex h-[360px] min-h-[300px] flex-none flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:h-full lg:min-h-[360px] lg:max-h-[620px] lg:min-w-0 lg:flex-1">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
         <div className="flex items-center gap-2">
           <Table2 className="h-3.5 w-3.5 text-emerald-400" />
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
@@ -88,11 +88,11 @@ export function CsvTableView({
       </div>
 
       {table.columnCount === 0 ? (
-        <div className="flex flex-1 items-center justify-center p-6 text-xs text-slate-500">
+        <div className="flex min-h-[220px] flex-1 items-center justify-center p-6 text-xs text-slate-500 lg:min-h-[280px]">
           No CSV rows to display.
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="min-h-[220px] flex-1 overflow-auto lg:min-h-[280px]">
           <table className="w-full border-collapse text-left font-mono text-xs">
             <thead className="sticky top-0 z-10 bg-slate-900 text-[11px] uppercase tracking-wider text-slate-400 shadow-sm">
               <tr>

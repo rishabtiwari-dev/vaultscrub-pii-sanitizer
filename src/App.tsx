@@ -344,7 +344,7 @@ export default function App() {
 
   return (
     <div
-      className="relative flex min-h-screen flex-col bg-slate-950 text-slate-200 lg:h-screen"
+      className="relative flex min-h-screen flex-col bg-slate-950 text-slate-200"
       onDragEnter={onDragEnter}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -406,7 +406,7 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex min-h-0 flex-1 flex-col gap-3 p-3 lg:flex-row">
+      <main className="flex min-h-[324px] flex-1 flex-col gap-3 p-3 lg:h-[46vh] lg:min-h-[384px] lg:max-h-[644px] lg:flex-row">
         {isCsv && workspaceView === 'csv' && csvTable ? (
           <CsvTableView
             table={csvTable}

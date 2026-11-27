@@ -35,7 +35,7 @@ export interface FocusTarget {
 }
 
 const PANE =
-  'flex min-h-[22rem] flex-1 flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:min-h-0';
+  'flex h-[360px] min-h-[300px] flex-none flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:h-full lg:min-h-[360px] lg:max-h-[620px] lg:min-w-0 lg:flex-1';
 const MONO = 'font-mono text-[13px] leading-6 whitespace-pre-wrap break-words';
 const HDR_BTN =
   'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-40';
@@ -44,7 +44,7 @@ const WHITELISTED =
 
 function PaneHeader({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
+    <div className="flex shrink-0 flex-wrap items-center justify-between gap-x-2 gap-y-1.5 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
       <h2 className="flex items-center gap-2 whitespace-nowrap text-xs font-semibold uppercase tracking-wider text-slate-400">
         {title}
       </h2>
@@ -109,7 +109,7 @@ export function SourcePane(p: SourceProps) {
     const ta = taRef.current;
     if (ta && p.view === 'edit') {
       ta.style.height = 'auto';
-      ta.style.height = `${Math.max(ta.scrollHeight, 200)}px`;
+      ta.style.height = `${Math.max(ta.scrollHeight, 260)}px`;
       if (pendingFocus.current) {
         pendingFocus.current = false;
         ta.focus();
@@ -232,13 +232,13 @@ export function SourcePane(p: SourceProps) {
         </div>
       </PaneHeader>
       {hint && (
-        <div role="status" className="border-b border-amber-500/20 bg-amber-500/5 px-3 py-1 text-[11px] text-amber-200">
+        <div role="status" className="shrink-0 border-b border-amber-500/20 bg-amber-500/5 px-3 py-1 text-[11px] text-amber-200">
           {hint}
         </div>
       )}
-      <div ref={p.scrollRef} onScroll={p.onScroll} className="min-h-0 flex-1 overflow-auto">
+      <div ref={p.scrollRef} onScroll={p.onScroll} className="min-h-[220px] flex-1 overflow-auto lg:min-h-[280px]">
         {p.view === 'edit' ? (
-          <div className="p-3">
+          <div className="min-h-full p-3">
             <textarea
               ref={taRef}
               value={p.text}
@@ -249,7 +249,7 @@ export function SourcePane(p: SourceProps) {
             />
           </div>
         ) : empty ? (
-          <div className="flex h-full min-h-60 flex-col items-center justify-center gap-4 p-4 text-center">
+          <div className="flex min-h-full flex-col items-center justify-center gap-4 p-5 text-center">
             <FileUp className="h-8 w-8 text-slate-600" />
             <div>
               <p className="text-sm font-medium text-slate-200">Load data to begin sanitizing</p>
@@ -383,9 +383,11 @@ export function OutputPane(p: OutputProps) {
           <Download className="h-3 w-3" /> Download
         </button>
       </PaneHeader>
-      <div ref={p.scrollRef} onScroll={p.onScroll} className="min-h-0 flex-1 overflow-auto">
+      <div ref={p.scrollRef} onScroll={p.onScroll} className="min-h-[220px] flex-1 overflow-auto lg:min-h-[280px]">
         {p.empty ? (
-          <p className="pt-6 text-center text-xs text-slate-600">Sanitized output appears here.</p>
+          <div className="flex min-h-full flex-col items-center justify-center p-6 text-center">
+            <p className="text-xs text-slate-500">Sanitized output appears here.</p>
+          </div>
         ) : (
           <LineView lines={lines} renderPiece={renderPiece} />
         )}
