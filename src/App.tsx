@@ -35,6 +35,7 @@ import {
 
 const DEBOUNCE_MS = 120;
 const FOCUS_PULSE_MS = 1600;
+const MAX_TEXT_FILE_BYTES = 5 * 1024 * 1024; // 5 MB client-side memory guard
 const INITIAL_SAMPLE: SamplePresetId = 'support_ticket';
 type WorkspaceView = 'diff' | 'csv';
 
@@ -92,6 +93,7 @@ export default function App() {
   const [promptLogOpen, setPromptLogOpen] = useState(false);
   const [rehydrateOpen, setRehydrateOpen] = useState(false);
   const [focus, setFocus] = useState<FocusTarget | null>(null);
+  const [announcement, setAnnouncement] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragDepth = useRef(0);
@@ -139,8 +141,14 @@ export default function App() {
 
   const exportableText = isCsv && csvTable ? csvTable.sanitizedCsv : result.sanitizedText;
 
-  const whitelistedCount = result.entities.filter((e) => e.whitelisted).length;
-  const redactedCount = result.entities.length - whitelistedCount;
+  const whitelistedCount = useMemo(
+    () => result.entities.filter((e) => e.whitelisted).length,
+    [result.entities]
+  );
+  const redactedCount = useMemo(
+    () => result.entities.length - whitelistedCount,
+    [result.entities.length, whitelistedCount]
+  );
 
   const loadText = useCallback((content: string, src: Omit<LoadedSource, 'size' | 'lines'>) => {
     setText(content);
@@ -151,6 +159,8 @@ export default function App() {
     setError(null);
     setFocus(null);
     setSource(describeSource(content, src));
+    const label = src.name ?? (src.sampleId ? `${src.sampleId} sample` : 'pasted text');
+    setAnnouncement(`Loaded ${label} (${countLines(content)} lines).`);
   }, []);
 
   const loadSample = useCallback(
@@ -162,6 +172,10 @@ export default function App() {
     async (file: File) => {
       if (!/\.(txt|csv)$/i.test(file.name)) {
         setError('Only .txt and .csv files are supported.');
+        return;
+      }
+      if (file.size > MAX_TEXT_FILE_BYTES) {
+        setError('File exceeds the 5 MB client-side limit. Please split or trim the file.');
         return;
       }
       try {
@@ -183,33 +197,49 @@ export default function App() {
     setWorkspaceView('diff');
     setError(null);
     setFocus(null);
+    setAnnouncement('Workspace cleared.');
   }, []);
 
-  const handleEdit = (t: string) => {
+  const handleEdit = useCallback((t: string) => {
     setText(t);
     // Span keys are offset-based, so edits invalidate the whitelist.
     setExcluded((prev) => (prev.size ? new Set() : prev));
     const meta = { size: new TextEncoder().encode(t).length, lines: countLines(t) };
     setSource((s) => (s ? { ...s, ...meta } : t ? { name: null, sampleId: null, ...meta } : null));
-  };
+  }, []);
 
-  const toggleSpan = (e: DetectedEntity) => {
-    const key = makeSpanKey(e);
-    setExcluded((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
+  const toggleSpan = useCallback(
+    (e: DetectedEntity) => {
+      const key = makeSpanKey(e);
+      const wasExcluded = excluded.has(key);
+      setExcluded((prev) => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key);
+        else next.add(key);
+        return next;
+      });
+      setAnnouncement(
+        wasExcluded ? `Restored redaction for ${e.type}.` : `Whitelisted ${e.type} span.`
+      );
+    },
+    [excluded]
+  );
 
-  const toggleType = (t: EntityType) =>
-    setEnabled((prev) => {
-      const next = new Set(prev);
-      if (next.has(t)) next.delete(t);
-      else next.add(t);
-      return next;
-    });
+  const resetWhitelist = useCallback(() => {
+    setExcluded(new Set());
+    setAnnouncement('All whitelisted spans restored.');
+  }, []);
+
+  const toggleType = useCallback(
+    (t: EntityType) =>
+      setEnabled((prev) => {
+        const next = new Set(prev);
+        if (next.has(t)) next.delete(t);
+        else next.add(t);
+        return next;
+      }),
+    []
+  );
 
   const syncScroll = (from: 'left' | 'right') => () => {
     if (performance.now() < suppressSyncUntil.current) return; // jump-to-span in flight
@@ -257,22 +287,26 @@ export default function App() {
     return () => window.clearTimeout(id);
   }, [toast]);
 
-  const copy = async (announce = false) => {
-    if (!exportableText) return;
-    try {
-      await navigator.clipboard.writeText(exportableText);
-    } catch {
-      const ta = document.createElement('textarea');
-      ta.value = exportableText;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand('copy');
-      ta.remove();
-    }
-    setCopied(true);
-    if (announce) setToast('Sanitized output copied to clipboard');
-    window.setTimeout(() => setCopied(false), 1800);
-  };
+  const copy = useCallback(
+    async (announce = false) => {
+      if (!exportableText) return;
+      try {
+        await navigator.clipboard.writeText(exportableText);
+      } catch {
+        const ta = document.createElement('textarea');
+        ta.value = exportableText;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      setCopied(true);
+      setAnnouncement('Sanitized output copied to clipboard.');
+      if (announce) setToast('Sanitized output copied to clipboard');
+      window.setTimeout(() => setCopied(false), 1800);
+    },
+    [exportableText]
+  );
 
   // Keep the global shortcut handler bound once while always calling the latest copy().
   const copyRef = useRef(copy);
@@ -298,7 +332,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  const download = () => {
+  const download = useCallback(() => {
     const { name, mime } = sanitizedFileName(source?.name ?? null, source?.sampleId === 'noisy_csv');
     const url = URL.createObjectURL(new Blob([exportableText], { type: `${mime};charset=utf-8` }));
     const a = document.createElement('a');
@@ -308,7 +342,8 @@ export default function App() {
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
-  };
+    setAnnouncement(`Downloaded ${name}.`);
+  }, [exportableText, source?.name, source?.sampleId]);
 
   const isFileDrag = (e: React.DragEvent) =>
     Array.from(e.dataTransfer?.types ?? []).includes('Files');
@@ -350,6 +385,15 @@ export default function App() {
       onDragLeave={onDragLeave}
       onDrop={onDrop}
     >
+      <a
+        href="#main-workspace"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:border focus:border-emerald-400 focus:bg-zinc-950 focus:px-3 focus:py-1.5 focus:text-xs focus:font-semibold focus:text-emerald-200 focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-emerald-400"
+      >
+        Skip to workspace
+      </a>
+      <div role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+        {announcement}
+      </div>
       <TopBar
         source={source}
         error={error}
@@ -376,28 +420,34 @@ export default function App() {
 
       {isCsv && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/40 px-4 py-1.5 sm:px-5">
-          <div className="inline-flex overflow-hidden rounded-md border border-slate-700 bg-zinc-950 text-xs">
+          <div
+            role="group"
+            aria-label="Workspace view mode"
+            className="inline-flex overflow-hidden rounded-md border border-slate-700 bg-zinc-950 text-xs"
+          >
             <button
               type="button"
+              aria-pressed={workspaceView === 'diff'}
               onClick={() => setWorkspaceView('diff')}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
                 workspaceView === 'diff'
                   ? 'bg-emerald-500/15 text-emerald-200'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Columns2 className="h-3.5 w-3.5" /> Raw Diff
+              <Columns2 aria-hidden="true" className="h-3.5 w-3.5" /> Raw Diff
             </button>
             <button
               type="button"
+              aria-pressed={workspaceView === 'csv'}
               onClick={() => setWorkspaceView('csv')}
-              className={`inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-medium transition-colors ${
+              className={`inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-1 font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
                 workspaceView === 'csv'
                   ? 'bg-emerald-500/15 text-emerald-200'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Table2 className="h-3.5 w-3.5" /> CSV Table View
+              <Table2 aria-hidden="true" className="h-3.5 w-3.5" /> CSV Table View
             </button>
           </div>
           <span className="text-[11px] text-slate-500">
@@ -406,7 +456,12 @@ export default function App() {
         </div>
       )}
 
-      <main className="flex min-h-[324px] flex-1 flex-col gap-3 p-3 lg:h-[46vh] lg:min-h-[384px] lg:max-h-[644px] lg:flex-row">
+      <main
+        id="main-workspace"
+        tabIndex={-1}
+        aria-label="Sanitization workspace"
+        className="flex min-h-[324px] flex-1 flex-col gap-3 p-3 outline-none lg:h-[46vh] lg:min-h-[384px] lg:max-h-[644px] lg:flex-row"
+      >
         {isCsv && workspaceView === 'csv' && csvTable ? (
           <CsvTableView
             table={csvTable}
@@ -428,7 +483,7 @@ export default function App() {
               onPasteText={(t) => loadText(t, { name: null, sampleId: null })}
               onClear={clear}
               onToggleSpan={toggleSpan}
-              onResetWhitelist={() => setExcluded(new Set())}
+              onResetWhitelist={resetWhitelist}
               onLoadSample={loadSample}
               onBrowse={() => fileInputRef.current?.click()}
               focus={focus}
@@ -488,6 +543,7 @@ export default function App() {
       <input
         ref={fileInputRef}
         type="file"
+        aria-label="Upload text or CSV file"
         accept=".txt,.csv"
         className="hidden"
         onChange={(e) => {
@@ -500,9 +556,10 @@ export default function App() {
       {toast && (
         <div
           role="status"
+          aria-live="polite"
           className="pointer-events-none fixed bottom-4 right-4 z-50 inline-flex items-center gap-2 rounded-md border border-emerald-500/40 bg-zinc-950/95 px-3 py-2 text-xs text-emerald-200 shadow-xl"
         >
-          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" /> {toast}
+          <CheckCircle2 aria-hidden="true" className="h-3.5 w-3.5 text-emerald-400" /> {toast}
         </div>
       )}
 
@@ -510,7 +567,7 @@ export default function App() {
         <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center border-2 border-dashed border-emerald-400 bg-slate-950/85 backdrop-blur-xs">
           <div className="flex flex-col items-center gap-3 rounded-xl border border-emerald-500/40 bg-zinc-950/90 px-8 py-6 shadow-2xl">
             <div className="rounded-full border border-emerald-500/40 bg-emerald-500/10 p-3">
-              <Upload className="h-6 w-6 text-emerald-400" />
+              <Upload aria-hidden="true" className="h-6 w-6 text-emerald-400" />
             </div>
             <p className="text-base font-medium text-emerald-200">
               Drop .txt or .csv file to sanitize 100% locally

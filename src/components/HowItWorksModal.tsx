@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useRef } from 'react';
 import {
   Binary,
   CreditCard,
@@ -8,6 +8,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { useModalFocus } from './useModalFocus';
 
 interface Props {
   open: boolean;
@@ -48,16 +49,8 @@ const GUARANTEES = [
 ];
 
 export function HowItWorksModal({ open, onClose }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useModalFocus(open, onClose, closeBtnRef);
 
   if (!open) return null;
 
@@ -76,7 +69,7 @@ export function HowItWorksModal({ open, onClose }: Props) {
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3.5">
           <div className="flex items-center gap-2.5">
             <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-1.5">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
+              <ShieldCheck aria-hidden="true" className="h-4 w-4 text-emerald-400" />
             </div>
             <div>
               <h2
@@ -91,12 +84,13 @@ export function HowItWorksModal({ open, onClose }: Props) {
             </div>
           </div>
           <button
+            ref={closeBtnRef}
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100"
+            className="rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
 
@@ -109,7 +103,7 @@ export function HowItWorksModal({ open, onClose }: Props) {
                 className="flex gap-3 rounded-lg border border-slate-800/90 bg-slate-900/40 p-3.5"
               >
                 <div className="mt-0.5 shrink-0 rounded-md border border-emerald-500/30 bg-emerald-500/10 p-1.5 text-emerald-300">
-                  <Icon className="h-4 w-4" />
+                  <Icon aria-hidden="true" className="h-4 w-4" />
                 </div>
                 <div>
                   <h3 className="text-xs font-semibold text-slate-100">
@@ -131,7 +125,7 @@ export function HowItWorksModal({ open, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+            className="rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
             Got it
           </button>

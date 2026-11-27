@@ -37,8 +37,9 @@ export interface FocusTarget {
 const PANE =
   'flex h-[360px] min-h-[300px] flex-none flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:h-full lg:min-h-[360px] lg:max-h-[620px] lg:min-w-0 lg:flex-1';
 const MONO = 'font-mono text-[13px] leading-6 whitespace-pre-wrap break-words';
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 const HDR_BTN =
-  'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-40';
+  `inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded border px-2 py-0.5 text-[11px] transition-colors disabled:opacity-40 ${FOCUS_RING}`;
 const WHITELISTED =
   'text-slate-400 line-through decoration-dashed decoration-slate-500 ring-1 ring-dashed ring-slate-600';
 
@@ -163,6 +164,8 @@ export function SourcePane(p: SourceProps) {
           data-anchor={anchorAttr}
           role="button"
           tabIndex={first ? 0 : -1}
+          aria-pressed={wl}
+          aria-label={`${entityLabel(e.type)} ${e.value}, ${wl ? 'whitelisted, activate to restore redaction' : 'activate to whitelist'}`}
           title={`${entityLabel(e.type)} • ${e.validationBadge}${wl ? ' • Whitelisted (click to re-enable)' : ' (click to whitelist)'}`}
           onClick={() => p.onToggleSpan(e)}
           onKeyDown={(ev) => {
@@ -171,7 +174,7 @@ export function SourcePane(p: SourceProps) {
               p.onToggleSpan(e);
             }
           }}
-          className={`cursor-pointer rounded-sm px-0.5 ${wl ? WHITELISTED : ENTITY_STYLES[e.type].highlight}${pulse}`}
+          className={`cursor-pointer rounded-sm px-0.5 ${FOCUS_RING} ${wl ? WHITELISTED : ENTITY_STYLES[e.type].highlight}${pulse}`}
         >
           {text}
         </span>
@@ -188,12 +191,12 @@ export function SourcePane(p: SourceProps) {
   };
 
   const toggleBtn = (active: boolean) =>
-    `inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 transition-colors ${
+    `inline-flex items-center gap-1 whitespace-nowrap px-2 py-0.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
       active ? 'bg-emerald-500/15 text-emerald-200' : 'text-slate-400 hover:text-slate-200'
     }`;
 
   return (
-    <div className={PANE}>
+    <section aria-label="Original source" className={PANE}>
       <PaneHeader title="Original Source">
         {p.excludedCount > 0 && (
           <button
@@ -201,7 +204,7 @@ export function SourcePane(p: SourceProps) {
             onClick={p.onResetWhitelist}
             className={`${HDR_BTN} border-amber-500/40 text-amber-300 hover:bg-amber-500/10`}
           >
-            <RotateCcw className="h-3 w-3" /> Reset Whitelist ({p.excludedCount})
+            <RotateCcw aria-hidden="true" className="h-3 w-3" /> Reset Whitelist ({p.excludedCount})
           </button>
         )}
         <button
@@ -210,7 +213,7 @@ export function SourcePane(p: SourceProps) {
           title="Replace source with clipboard text"
           className={`${HDR_BTN} border-slate-700 text-slate-200 hover:border-slate-500`}
         >
-          <ClipboardPaste className="h-3 w-3" /> Paste
+          <ClipboardPaste aria-hidden="true" className="h-3 w-3" /> Paste
         </button>
         {!empty && (
           <button
@@ -219,20 +222,38 @@ export function SourcePane(p: SourceProps) {
             title="Clear source and return to onboarding"
             className={`${HDR_BTN} border-slate-700 text-slate-300 hover:border-red-500/60 hover:text-red-300`}
           >
-            <X className="h-3 w-3" /> Clear
+            <X aria-hidden="true" className="h-3 w-3" /> Clear
           </button>
         )}
-        <div className="inline-flex overflow-hidden rounded border border-slate-700 text-[11px]">
-          <button type="button" onClick={() => p.onView('inspect')} className={toggleBtn(p.view === 'inspect')}>
-            <Eye className="h-3 w-3" /> Inspect
+        <div
+          role="group"
+          aria-label="Source view mode"
+          className="inline-flex overflow-hidden rounded border border-slate-700 text-[11px]"
+        >
+          <button
+            type="button"
+            aria-pressed={p.view === 'inspect'}
+            onClick={() => p.onView('inspect')}
+            className={toggleBtn(p.view === 'inspect')}
+          >
+            <Eye aria-hidden="true" className="h-3 w-3" /> Inspect
           </button>
-          <button type="button" onClick={startEditing} className={toggleBtn(p.view === 'edit')}>
-            <Pencil className="h-3 w-3" /> Edit Raw Text
+          <button
+            type="button"
+            aria-pressed={p.view === 'edit'}
+            onClick={startEditing}
+            className={toggleBtn(p.view === 'edit')}
+          >
+            <Pencil aria-hidden="true" className="h-3 w-3" /> Edit Raw Text
           </button>
         </div>
       </PaneHeader>
       {hint && (
-        <div role="status" className="shrink-0 border-b border-amber-500/20 bg-amber-500/5 px-3 py-1 text-[11px] text-amber-200">
+        <div
+          role="status"
+          aria-live="polite"
+          className="shrink-0 border-b border-amber-500/20 bg-amber-500/5 px-3 py-1 text-[11px] text-amber-200"
+        >
           {hint}
         </div>
       )}
@@ -241,21 +262,26 @@ export function SourcePane(p: SourceProps) {
           <div className="min-h-full p-3">
             <textarea
               ref={taRef}
+              aria-label="Original source text editor"
               value={p.text}
               spellCheck={false}
               placeholder="Paste or type text containing PII..."
               onChange={(e) => p.onChange(e.target.value)}
-              className={`${MONO} block w-full resize-none overflow-hidden bg-transparent text-slate-200 outline-none placeholder:text-slate-600`}
+              className={`${MONO} block w-full resize-none overflow-hidden rounded bg-transparent text-slate-200 placeholder:text-slate-600 ${FOCUS_RING}`}
             />
           </div>
         ) : empty ? (
           <div className="flex min-h-full flex-col items-center justify-center gap-4 p-5 text-center">
-            <FileUp className="h-8 w-8 text-slate-600" />
+            <FileUp aria-hidden="true" className="h-8 w-8 text-slate-600" />
             <div>
               <p className="text-sm font-medium text-slate-200">Load data to begin sanitizing</p>
               <p className="text-xs text-slate-500">
                 Drag &amp; drop a .txt / .csv file anywhere,{' '}
-                <button type="button" onClick={p.onBrowse} className="text-sky-400 underline">
+                <button
+                  type="button"
+                  onClick={p.onBrowse}
+                  className={`rounded text-sky-400 underline ${FOCUS_RING}`}
+                >
                   browse
                 </button>
                 , paste raw text, or start from a sample. Nothing leaves this browser tab.
@@ -264,9 +290,9 @@ export function SourcePane(p: SourceProps) {
             <button
               type="button"
               onClick={startEditing}
-              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+              className={`inline-flex items-center gap-1.5 rounded-md border border-emerald-500/50 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 ${FOCUS_RING}`}
             >
-              <Type className="h-3.5 w-3.5" /> Paste Raw Text
+              <Type aria-hidden="true" className="h-3.5 w-3.5" /> Paste Raw Text
             </button>
             <div className="grid w-full max-w-xl grid-cols-1 gap-2 sm:grid-cols-2">
               {SAMPLE_PRESET_LIST.map((s) => (
@@ -274,7 +300,7 @@ export function SourcePane(p: SourceProps) {
                   key={s.id}
                   type="button"
                   onClick={() => p.onLoadSample(s.id)}
-                  className="rounded-md border border-slate-800 bg-slate-900 p-3 text-left hover:border-slate-500"
+                  className={`rounded-md border border-slate-800 bg-slate-900 p-3 text-left hover:border-slate-500 ${FOCUS_RING}`}
                 >
                   <div className="text-xs font-semibold text-slate-100">{s.label}</div>
                   <div className="mt-1 text-[11px] leading-snug text-slate-500">{s.description}</div>
@@ -286,7 +312,7 @@ export function SourcePane(p: SourceProps) {
           <LineView lines={lines} renderPiece={renderPiece} />
         )}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -345,7 +371,7 @@ export function OutputPane(p: OutputProps) {
   };
 
   return (
-    <div className={PANE}>
+    <section aria-label="Sanitized output" className={PANE}>
       <PaneHeader
         title={
           <>
@@ -370,7 +396,7 @@ export function OutputPane(p: OutputProps) {
           title="Copy sanitized output (Ctrl/⌘ + Shift + C)"
           className={`${HDR_BTN} border-slate-700 text-slate-200 hover:border-slate-500`}
         >
-          {p.copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+          {p.copied ? <Check aria-hidden="true" className="h-3 w-3 text-emerald-400" /> : <Copy aria-hidden="true" className="h-3 w-3" />}
           {p.copied ? 'Copied!' : 'Copy'}
         </button>
         <button
@@ -380,7 +406,7 @@ export function OutputPane(p: OutputProps) {
           title="Download sanitized file"
           className={`${HDR_BTN} border-emerald-500/50 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/20`}
         >
-          <Download className="h-3 w-3" /> Download
+          <Download aria-hidden="true" className="h-3 w-3" /> Download
         </button>
       </PaneHeader>
       <div ref={p.scrollRef} onScroll={p.onScroll} className="min-h-[220px] flex-1 overflow-auto lg:min-h-[280px]">
@@ -392,6 +418,6 @@ export function OutputPane(p: OutputProps) {
           <LineView lines={lines} renderPiece={renderPiece} />
         )}
       </div>
-    </div>
+    </section>
   );
 }

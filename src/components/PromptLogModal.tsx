@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useMemo } from 'react';
+import { Fragment, useMemo, useRef } from 'react';
 import { Download, ScrollText, X } from 'lucide-react';
 import promptLogRaw from '../../PROMPT_LOG.md?raw';
+import { useModalFocus } from './useModalFocus';
 
 interface Props {
   open: boolean;
@@ -101,27 +102,27 @@ function PromptLogContent({ markdown }: { markdown: string }) {
 
       if (trimmed.startsWith('### ')) {
         out.push(
-          <h3 key={key++} className="mt-5 mb-2 text-sm font-semibold text-emerald-300">
+          <h5 key={key++} className="mt-5 mb-2 text-sm font-semibold text-emerald-300">
             {renderInline(trimmed.slice(4))}
-          </h3>
+          </h5>
         );
         i += 1;
         continue;
       }
       if (trimmed.startsWith('## ')) {
         out.push(
-          <h2 key={key++} className="mt-5 mb-2 border-b border-slate-800 pb-1 text-base font-semibold text-slate-100">
+          <h4 key={key++} className="mt-5 mb-2 border-b border-slate-800 pb-1 text-base font-semibold text-slate-100">
             {renderInline(trimmed.slice(3))}
-          </h2>
+          </h4>
         );
         i += 1;
         continue;
       }
       if (trimmed.startsWith('# ')) {
         out.push(
-          <h1 key={key++} className="mb-2 text-lg font-semibold text-slate-50">
+          <h3 key={key++} className="mb-2 text-lg font-semibold text-slate-50">
             {renderInline(trimmed.slice(2))}
-          </h1>
+          </h3>
         );
         i += 1;
         continue;
@@ -142,7 +143,7 @@ function PromptLogContent({ markdown }: { markdown: string }) {
               <thead className="bg-slate-900/90 text-[10px] uppercase tracking-wider text-slate-400">
                 <tr>
                   {headers.map((h, ci) => (
-                    <th key={ci} className="px-3 py-2 font-medium">
+                    <th key={ci} scope="col" className="px-3 py-2 font-medium">
                       {renderInline(h)}
                     </th>
                   ))}
@@ -230,16 +231,8 @@ function PromptLogContent({ markdown }: { markdown: string }) {
 }
 
 export function PromptLogModal({ open, onClose }: Props) {
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useModalFocus(open, onClose, closeBtnRef);
 
   if (!open) return null;
 
@@ -270,7 +263,7 @@ export function PromptLogModal({ open, onClose }: Props) {
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3.5">
           <div className="flex items-center gap-2.5">
             <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-1.5">
-              <ScrollText className="h-4 w-4 text-emerald-400" />
+              <ScrollText aria-hidden="true" className="h-4 w-4 text-emerald-400" />
             </div>
             <div>
               <h2 id="prompt-log-title" className="text-sm font-semibold text-slate-100">
@@ -286,17 +279,18 @@ export function PromptLogModal({ open, onClose }: Props) {
             <button
               type="button"
               onClick={downloadLog}
-              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20"
+              className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-200 hover:bg-emerald-500/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             >
-              <Download className="h-3.5 w-3.5" /> Download PROMPT_LOG.md
+              <Download aria-hidden="true" className="h-3.5 w-3.5" /> Download PROMPT_LOG.md
             </button>
             <button
+              ref={closeBtnRef}
               type="button"
               onClick={onClose}
               aria-label="Close modal"
-              className="rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100"
+              className="rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
             >
-              <X className="h-4 w-4" />
+              <X aria-hidden="true" className="h-4 w-4" />
             </button>
           </div>
         </div>
@@ -312,7 +306,7 @@ export function PromptLogModal({ open, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500"
+            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
           >
             Close
           </button>

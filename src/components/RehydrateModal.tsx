@@ -1,6 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Check, Copy, FileJson, RotateCcw, Sparkles, Upload, X } from 'lucide-react';
 import { rehydrateText } from '../engine';
+import { useModalFocus } from './useModalFocus';
+
+const MAX_AUDIT_JSON_BYTES = 2 * 1024 * 1024; // 2 MB client-side memory guard
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
 
 interface Props {
   open: boolean;
@@ -30,17 +34,8 @@ export function RehydrateModal({
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const jsonInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
+  useModalFocus(open, onClose, closeBtnRef);
 
   const activeMap = uploadedMap ? uploadedMap.map : sessionPseudonymMap;
   const activeTokenCount = Object.keys(activeMap).length;
@@ -54,6 +49,10 @@ export function RehydrateModal({
 
   const handleLoadJson = async (file: File) => {
     setJsonError(null);
+    if (file.size > MAX_AUDIT_JSON_BYTES) {
+      setJsonError('Audit JSON exceeds the 2 MB client-side limit.');
+      return;
+    }
     try {
       const raw = await file.text();
       const parsed: unknown = JSON.parse(raw);
@@ -113,7 +112,7 @@ export function RehydrateModal({
         <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900/60 px-5 py-3.5">
           <div className="flex items-center gap-2.5">
             <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-1.5">
-              <RotateCcw className="h-4 w-4 text-emerald-400" />
+              <RotateCcw aria-hidden="true" className="h-4 w-4 text-emerald-400" />
             </div>
             <div>
               <h2
@@ -128,19 +127,20 @@ export function RehydrateModal({
             </div>
           </div>
           <button
+            ref={closeBtnRef}
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100"
+            className={`rounded-md border border-slate-800 p-1 text-slate-400 hover:border-slate-600 hover:text-slate-100 ${FOCUS_RING}`}
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="h-4 w-4" />
           </button>
         </div>
 
         {/* Map Source Bar */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/30 px-5 py-2.5 text-xs">
           <div className="flex flex-wrap items-center gap-2">
-            <FileJson className="h-3.5 w-3.5 text-emerald-400" />
+            <FileJson aria-hidden="true" className="h-3.5 w-3.5 text-emerald-400" />
             <span className="text-slate-400">Mapping Source:</span>
             <span className="rounded border border-slate-700 bg-slate-900 px-2 py-0.5 font-mono text-[11px] text-slate-200">
               {uploadedMap ? uploadedMap.fileName : 'Active Session Map'}
@@ -148,13 +148,18 @@ export function RehydrateModal({
             <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] text-emerald-300">
               {activeTokenCount} {activeTokenCount === 1 ? 'token' : 'tokens'}
             </span>
-            {jsonError && <span className="text-red-400">{jsonError}</span>}
+            {jsonError && (
+              <span role="alert" className="text-red-400">
+                {jsonError}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
             <input
               ref={jsonInputRef}
               type="file"
+              aria-label="Load Audit JSON file"
               accept=".json,application/json"
               className="hidden"
               onChange={(e) => {
@@ -166,9 +171,9 @@ export function RehydrateModal({
             <button
               type="button"
               onClick={() => jsonInputRef.current?.click()}
-              className="inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-zinc-900 px-2.5 py-1 text-xs text-slate-200 hover:border-slate-500"
+              className={`inline-flex items-center gap-1.5 rounded-md border border-slate-700 bg-zinc-900 px-2.5 py-1 text-xs text-slate-200 hover:border-slate-500 ${FOCUS_RING}`}
             >
-              <Upload className="h-3.5 w-3.5" /> Load Audit JSON
+              <Upload aria-hidden="true" className="h-3.5 w-3.5" /> Load Audit JSON
             </button>
             {uploadedMap && (
               <button
@@ -177,7 +182,7 @@ export function RehydrateModal({
                   setUploadedMap(null);
                   setJsonError(null);
                 }}
-                className="rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-slate-100"
+                className={`rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-300 hover:border-slate-500 hover:text-slate-100 ${FOCUS_RING}`}
               >
                 Use Session Map
               </button>
@@ -189,23 +194,23 @@ export function RehydrateModal({
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-hidden p-4 md:grid-cols-2">
           <div className="flex min-h-[260px] flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-900/40">
             <div className="flex items-center justify-between border-b border-slate-800 px-3 py-2">
-              <span className="text-xs font-medium text-slate-200">
+              <label htmlFor="rehydrate-input" className="text-xs font-medium text-slate-200">
                 Sanitized / AI Reply Input
-              </span>
+              </label>
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
                   onClick={() => setInputText(currentSanitizedText)}
                   disabled={!currentSanitizedText}
-                  className="inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                  className={`inline-flex items-center gap-1 rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[11px] font-medium text-emerald-200 hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
                 >
-                  <Sparkles className="h-3 w-3" /> Use Current Sanitized Output
+                  <Sparkles aria-hidden="true" className="h-3 w-3" /> Use Current Sanitized Output
                 </button>
                 {inputText && (
                   <button
                     type="button"
                     onClick={() => setInputText('')}
-                    className="rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-slate-500"
+                    className={`rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-300 hover:border-slate-500 ${FOCUS_RING}`}
                   >
                     Clear
                   </button>
@@ -213,11 +218,12 @@ export function RehydrateModal({
               </div>
             </div>
             <textarea
+              id="rehydrate-input"
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               placeholder="Paste text containing tokens like EMAIL_01, PHONE_01, CARD_01..."
               spellCheck={false}
-              className="min-h-0 flex-1 resize-none bg-transparent p-3 font-mono text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus:outline-none"
+              className="min-h-0 flex-1 resize-none bg-transparent p-3 font-mono text-xs leading-relaxed text-slate-200 placeholder:text-slate-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400"
             />
           </div>
 
@@ -227,7 +233,11 @@ export function RehydrateModal({
                 <span className="text-xs font-medium text-slate-200">
                   Locally Restored Output
                 </span>
-                <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300"
+                >
                   {replacementsCount} {replacementsCount === 1 ? 'token' : 'tokens'} restored
                 </span>
               </div>
@@ -235,15 +245,15 @@ export function RehydrateModal({
                 type="button"
                 onClick={() => void copyRestored()}
                 disabled={!restoredText}
-                className="inline-flex items-center gap-1 rounded border border-slate-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-slate-200 hover:border-emerald-500/60 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40"
+                className={`inline-flex items-center gap-1 rounded border border-slate-700 bg-zinc-900 px-2 py-0.5 text-[11px] text-slate-200 hover:border-emerald-500/60 hover:text-emerald-200 disabled:cursor-not-allowed disabled:opacity-40 ${FOCUS_RING}`}
               >
                 {copied ? (
                   <>
-                    <Check className="h-3 w-3 text-emerald-400" /> Copied!
+                    <Check aria-hidden="true" className="h-3 w-3 text-emerald-400" /> Copied!
                   </>
                 ) : (
                   <>
-                    <Copy className="h-3 w-3" /> Copy Restored
+                    <Copy aria-hidden="true" className="h-3 w-3" /> Copy Restored
                   </>
                 )}
               </button>
@@ -269,7 +279,7 @@ export function RehydrateModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500"
+            className={`rounded-md border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-medium text-slate-200 hover:border-slate-500 ${FOCUS_RING}`}
           >
             Close
           </button>

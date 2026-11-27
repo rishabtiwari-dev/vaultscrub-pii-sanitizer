@@ -19,19 +19,27 @@ let installed = false;
 
 const DEV_PATH_PREFIXES = ['/@vite', '/@react-refresh', '/@id', '/@fs', '/src/', '/node_modules/', '/__vite'];
 
-function isIgnored(rawUrl: string): boolean {
+export function isIgnoredRequestUrl(
+  rawUrl: string,
+  baseHref: string = typeof window !== 'undefined' ? window.location.href : 'http://localhost/'
+): boolean {
   try {
-    const url = new URL(rawUrl, window.location.href);
+    const base = new URL(baseHref);
+    const url = new URL(rawUrl, base);
     if (url.protocol === 'data:' || url.protocol === 'blob:' || url.protocol === 'about:') {
       return true;
     }
-    if (url.origin === window.location.origin) {
+    if (url.origin === base.origin) {
       return DEV_PATH_PREFIXES.some((p) => url.pathname.startsWith(p));
     }
     return false;
   } catch {
     return true;
   }
+}
+
+function isIgnored(rawUrl: string): boolean {
+  return isIgnoredRequestUrl(rawUrl);
 }
 
 function record(method: string, rawUrl: string): void {

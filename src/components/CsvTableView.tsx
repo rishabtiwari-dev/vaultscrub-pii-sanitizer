@@ -14,6 +14,8 @@ interface Props {
   onToggleSpan: (e: DetectedEntity) => void;
 }
 
+const FOCUS_RING = 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400';
+
 export function CsvTableView({
   table,
   copied,
@@ -24,10 +26,13 @@ export function CsvTableView({
   const [cellMode, setCellMode] = useState<CellMode>('sanitized');
 
   return (
-    <div className="flex h-[360px] min-h-[300px] flex-none flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:h-full lg:min-h-[360px] lg:max-h-[620px] lg:min-w-0 lg:flex-1">
+    <section
+      aria-label="CSV table view"
+      className="flex h-[360px] min-h-[300px] flex-none flex-col overflow-hidden rounded-lg border border-slate-800 bg-zinc-950 lg:h-full lg:min-h-[360px] lg:max-h-[620px] lg:min-w-0 lg:flex-1"
+    >
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/60 px-3 py-2">
         <div className="flex items-center gap-2">
-          <Table2 className="h-3.5 w-3.5 text-emerald-400" />
+          <Table2 aria-hidden="true" className="h-3.5 w-3.5 text-emerald-400" />
           <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-300">
             CSV Table View
           </h2>
@@ -37,28 +42,34 @@ export function CsvTableView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex overflow-hidden rounded border border-slate-700 text-[11px]">
+          <div
+            role="group"
+            aria-label="CSV cell display mode"
+            className="inline-flex overflow-hidden rounded border border-slate-700 text-[11px]"
+          >
             <button
               type="button"
+              aria-pressed={cellMode === 'sanitized'}
               onClick={() => setCellMode('sanitized')}
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 ${
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
                 cellMode === 'sanitized'
                   ? 'bg-emerald-500/20 text-emerald-200'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <ShieldCheck className="h-3 w-3" /> Sanitized
+              <ShieldCheck aria-hidden="true" className="h-3 w-3" /> Sanitized
             </button>
             <button
               type="button"
+              aria-pressed={cellMode === 'original'}
               onClick={() => setCellMode('original')}
-              className={`inline-flex items-center gap-1 px-2.5 py-0.5 ${
+              className={`inline-flex items-center gap-1 px-2.5 py-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-400 ${
                 cellMode === 'original'
                   ? 'bg-slate-700 text-slate-50'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              <Eye className="h-3 w-3" /> Original (Highlighted)
+              <Eye aria-hidden="true" className="h-3 w-3" /> Original (Highlighted)
             </button>
           </div>
 
@@ -66,12 +77,12 @@ export function CsvTableView({
             type="button"
             disabled={table.columnCount === 0}
             onClick={onCopy}
-            className="inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-200 hover:border-slate-500 disabled:opacity-40"
+            className={`inline-flex items-center gap-1 rounded border border-slate-700 px-2 py-0.5 text-[11px] text-slate-200 hover:border-slate-500 disabled:opacity-40 ${FOCUS_RING}`}
           >
             {copied ? (
-              <Check className="h-3 w-3 text-emerald-400" />
+              <Check aria-hidden="true" className="h-3 w-3 text-emerald-400" />
             ) : (
-              <Copy className="h-3 w-3" />
+              <Copy aria-hidden="true" className="h-3 w-3" />
             )}
             {copied ? 'Copied!' : 'Copy Sanitized'}
           </button>
@@ -80,9 +91,9 @@ export function CsvTableView({
             type="button"
             disabled={table.columnCount === 0}
             onClick={onDownload}
-            className="inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40"
+            className={`inline-flex items-center gap-1 rounded border border-emerald-500/50 bg-emerald-500/10 px-2 py-0.5 text-[11px] text-emerald-200 hover:bg-emerald-500/20 disabled:opacity-40 ${FOCUS_RING}`}
           >
-            <Download className="h-3 w-3" /> Download Sanitized
+            <Download aria-hidden="true" className="h-3 w-3" /> Download Sanitized
           </button>
         </div>
       </div>
@@ -96,12 +107,13 @@ export function CsvTableView({
           <table className="w-full border-collapse text-left font-mono text-xs">
             <thead className="sticky top-0 z-10 bg-slate-900 text-[11px] uppercase tracking-wider text-slate-400 shadow-sm">
               <tr>
-                <th className="border-b border-r border-slate-800 px-3 py-2 text-right text-slate-500">
+                <th scope="col" className="border-b border-r border-slate-800 px-3 py-2 text-right text-slate-500">
                   #
                 </th>
                 {table.headers.map((header, idx) => (
                   <th
                     key={idx}
+                    scope="col"
                     className="whitespace-nowrap border-b border-r border-slate-800 px-3 py-2 font-semibold text-slate-200 last:border-r-0"
                   >
                     {header}
@@ -165,6 +177,8 @@ export function CsvTableView({
                                   key={sIdx}
                                   role="button"
                                   tabIndex={0}
+                                  aria-pressed={wl}
+                                  aria-label={`${e.type} ${seg.text}, ${wl ? 'whitelisted, activate to restore redaction' : 'activate to whitelist'}`}
                                   title={`${e.type} • ${e.validationBadge}${
                                     wl
                                       ? ' • Whitelisted (click to re-enable)'
@@ -177,7 +191,7 @@ export function CsvTableView({
                                       onToggleSpan(e);
                                     }
                                   }}
-                                  className={`cursor-pointer rounded-sm px-0.5 ${
+                                  className={`cursor-pointer rounded-sm px-0.5 ${FOCUS_RING} ${
                                     wl
                                       ? 'text-slate-400 line-through decoration-dashed decoration-slate-500 ring-1 ring-dashed ring-slate-600'
                                       : ENTITY_STYLES[e.type].highlight
@@ -200,6 +214,6 @@ export function CsvTableView({
           </table>
         </div>
       )}
-    </div>
+    </section>
   );
 }
